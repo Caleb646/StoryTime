@@ -8,6 +8,7 @@
 #include "types.h"
 #include "utils.h"
 #include "core.h"
+#include "ndb.h"
 
 #ifndef READER_LTP_H
 #define READER_LTP_H
@@ -48,7 +49,7 @@ namespace reader {
 			/// for each of the first 8 data blocks (including this header block). If the HN has fewer than 8 data blocks, 
 			/// then the values corresponding to the non-existent data blocks MUST be set to zero. The following table explains 
 			/// the values indicated by each 4-bit value. 
-			int64_t rgbFillLevel{};
+			std::vector<types::byte_t> rgbFillLevel{};
 		};
 
 		/**
@@ -396,6 +397,97 @@ namespace reader {
 			/// The size of rgCEB is CEIL(TCINFO.cCols / 8) bytes. Extra lower-order bits SHOULD be ignored. 
 			/// Creators of a new PST MUST set the extra lower-order bits to zero.
 			std::vector<types::byte_t> rgbCEB{};
+		};
+
+		/**
+		 * @brief The Heap-on-Node defines a standard heap over a node's data stream. 
+		 * Taking advantage of the flexible structure of the node, the organization 
+		 * of the heap data can take on several forms, depending on how much data 
+		 * is stored in the heap. For heaps whose size exceed the amount of data 
+		 * that can fit in one data block, the first data block in the HN contains a 
+		 * full header record and a trailer record. With the exception of blocks that 
+		 * require an HNBITMAPHDR structure, subsequent data blocks only have an abridged 
+		 * header and a trailer. This is explained in more detail in the following sections. 
+		 * Because the heap is a structure that is defined at a higher layer than the NDB, 
+		 * the heap structures are written to the external data sections of data blocks 
+		 * and do not use any information from the data block's NDB structure. 
+		*/
+		class HN 
+		{
+		public:
+			enum class ConfigType
+			{
+				SINGLE_BLOCK,
+				XBLOCK,
+				XXBLOCK
+			};
+		};
+
+		class LTP
+		{
+		public:
+			LTP(ndb::NDB& ndb) : m_ndb(ndb)
+			{
+				_init();
+			}
+		private:
+			void _init()
+			{
+				std::vector<ndb::BBTEntry*> bbtEntries = m_ndb.getAll<ndb::BBTEntry>();
+				std::vector<ndb::NBTEntry*> nbtEntries = m_ndb.getAll<ndb::NBTEntry>();
+				LOG("[INFO] Found %i BBTEntries", bbtEntries.size());
+				LOG("[INFO] Found %i NBTEntries", nbtEntries.size());
+
+				ndb::DataTree dataTree = m_ndb.readDataTree(bbtEntries[0]->bref, bbtEntries[0]->cb);
+				_setupHN(dataTree);
+			}
+
+			void _setupHN(ndb::DataTree& tree)
+			{
+				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
+
+				HNHDR hnHdr = _readHNHDR(tree.dataBlocks.at(0).data, 0, tree.dataBlocks.size());
+				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
+				{
+					const ndb::DataBlock& block = tree.dataBlocks.at(i);
+				}
+			}
+
+			HNHDR _readHNHDR(const std::vector<types::byte_t>& bytes, int dataBlockIdx, int64_t nDataBlocks)
+			{
+				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
+				HNHDR hnhdr{};
+				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<decltype(hnhdr.ibHnpm)>);
+				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<decltype(hnhdr.bSig)>);
+				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<decltype(hnhdr.bClientSig)>);
+				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<decltype(hnhdr.hidUserRoot)>);
+				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
+
+				ASSERT((hnhdr.bSig == 0xEC), "[ERROR] Invalid HN signature");
+				ASSERT( (utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES) ), "[ERROR] Invalid BType");
+				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");
+
+				if (nDataBlocks < 8) 
+				{
+					for (int64_t i = nDataBlocks - 1; i < 8; i++)
+					{
+						ASSERT(((int16_t)hnhdr.rgbFillLevel[i] == (int16_t)types::FillLevel::LEVEL_EMPTY),
+							"[ERROR] Fill level must be empty for block at idx [%i]", i);
+					}
+				}
+
+
+				return hnhdr;
+			}
+
+			HNPageMap _readHNPageMap(const std::vector<types::byte_t>& bytes, int64_t startPosOfHNPageMap)
+			{
+				HNPageMap pg{};
+				pg.cAlloc = utils::slice(bytes, startPosOfHNPageMap, startPosOfHNPageMap + (int64_t)2, (int64_t)2, utils::toT_l<decltype(pg.cAlloc)>);
+			}
+
+		private:
+			ndb::NDB& m_ndb;
 		};
 	}
 }

@@ -45,6 +45,18 @@ namespace reader {
                 0x1F
         };
 
+        std::vector<int64_t> BTYPE_VALUES = {
+            0x6C,
+            0x7C,
+            0x8C,
+            0x9C,
+            0xA5,
+            0xAC,
+            0xB5,
+            0xBC,
+            0xCC,
+        };
+
         void log(int lineNumber, const char* fmt, ...)
         {
             char buffer[1000]{};
@@ -104,6 +116,56 @@ namespace reader {
         }
 
         template<typename T>
+        types::NIDType getNIDType(T t)
+        {
+            switch (t)
+            {
+            case 0x00:
+                return types::NIDType::HID;
+            case 0x01:
+                return types::NIDType::INTERNAL;
+            case 0x02:
+                return types::NIDType::NORMAL_FOLDER;
+            case 0x03:
+                return types::NIDType::SEARCH_FOLDER;
+            case 0x04:
+                return types::NIDType::NORMAL_MESSAGE;
+            case 0x05:
+                return types::NIDType::ATTACHMENT;
+            case 0x06:
+                return types::NIDType::SEARCH_UPDATE_QUEUE;
+            case 0x07:
+                return types::NIDType::SEARCH_CRITERIA_OBJECT;
+            case 0x08:
+                return types::NIDType::ASSOC_MESSAGE;
+            case 0x0A:
+                return types::NIDType::CONTENTS_TABLE_INDEX;
+            case 0X0B:
+                return types::NIDType::RECEIVE_FOLDER_TABLE;
+            case 0x0C:
+                return types::NIDType::OUTGOING_QUEUE_TABLE;
+            case 0x0D:
+                return types::NIDType::HIERARCHY_TABLE;
+            case 0x0E:
+                return types::NIDType::CONTENTS_TABLE;
+            case 0x0F:
+                return types::NIDType::ASSOC_CONTENTS_TABLE;
+            case 0x10:
+                return types::NIDType::SEARCH_CONTENTS_TABLE;
+            case 0x11:
+                return types::NIDType::ATTACHMENT_TABLE;
+            case 0x12:
+                return types::NIDType::RECIPIENT_TABLE;
+            case 0x13:
+                return types::NIDType::SEARCH_TABLE_INDEX;
+            case 0x1F:
+                return types::NIDType::LTP;
+            default:
+                return types::NIDType::INVALID;
+            }
+        }
+
+        template<typename T>
         std::string NIDTypeToString(T t)
         {
             switch ((int64_t)t)
@@ -149,7 +211,25 @@ namespace reader {
             case 0x1F:
                 return "NID_TYPE_LTP";
             default:
-                return "Invalid NID Type";
+                return "Uknown NID Type";
+            }
+        }
+
+        template<typename T>
+        types::BType toBType(T t)
+        {
+            switch (t)
+            {
+            case 0x6C: return types::BType::Reserved1;
+            case 0x7C: return types::BType::TC;
+            case 0x8C: return types::BType::Reserved2;
+            case 0x9C: return types::BType::Reserved3;
+            case 0xA5: return types::BType::Reserved4;
+            case 0xAC: return types::BType::Reserved5;
+            case 0xB5: return types::BType::BTH;
+            case 0xBC: return types::BType::PC;
+            case 0xCC: return types::BType::Reserved6;
+            default: return types::BType::Invalid;
             }
         }
 
@@ -289,6 +369,26 @@ namespace reader {
             return found;
         }
 
+        //template<typename T>
+        std::vector<types::byte_t> toBits(int32_t integer, int64_t nbits)
+		{
+            ASSERT( (nbits > 0 && nbits <= 8 && nbits % 2 == 0), "[ERROR] nbits has to be between 1 and 8 and a multiple of 2");
+            int64_t nElements = sizeof(integer) * (8 / nbits);
+            int64_t mask = (int64_t)0xFF >> ((int64_t)8 - nbits);
+			std::vector<types::byte_t> bytes(nElements);
+			for (int64_t i = 0; i < nElements; i++)
+			{
+                // mask out the desired bits
+                int64_t masked = integer & (mask << (i * nbits));
+                // once masked, shift the bits to the right so they are in the first 8 bits
+                int64_t shifted = masked >> (i * nbits);
+                // if masked and shifted correctly, anding with the mask should be equal to shifted
+                ASSERT(( (shifted & mask) == shifted), "[ERROR] shifted & mask != mask");
+				bytes[i] = static_cast<types::byte_t>(shifted);
+			}
+			return bytes;
+		}
+
         template<typename T>
         std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)
         {
@@ -317,9 +417,16 @@ namespace reader {
             return static_cast<T>((k >> start) & ((1 << size) - 1));
         }
 
+        template<typename R, typename T, typename I>
+        R sliceBits(T integer, I start, I end, I size)
+        {
+            return sliceBits<R>(toBits(integer, 8), start, end, size);
+        }
+
+        template<typename T>
         std::vector<types::byte_t> readBytes(
             std::ifstream& file, 
-            std::uint32_t numBytes)
+            T numBytes)
         {
             std::vector<types::byte_t> res(numBytes, '\0');
             file.read((char*)res.data(), sizeof(types::byte_t) * res.size());

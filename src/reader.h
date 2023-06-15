@@ -8,6 +8,7 @@
 #include "types.h"
 #include "core.h"
 #include "NDB.h"
+#include "LTP.h"
 
 #ifndef PST_READER_H
 #define PST_READER_H
@@ -77,6 +78,7 @@ namespace reader
             m_header = _readHeader(m_file);
             m_root = _readRoot(m_header);
             ndb::NDB ndb(m_file, m_root.nodeBTreeRootPage, m_root.blockBTreeRootPage);
+            ltp::LTP ltp(ndb);
         }
 
     private:
@@ -238,7 +240,37 @@ namespace reader
            *   NID_TYPE_ASSOC_MESSAGE 32768 (0x8000) 
            *   Any other NID_TYPE 1024 (0x400)
            */
-           std::vector<types::byte_t> rgnids = utils::readBytes(m_file, 128);
+           std::vector<types::byte_t> rgnidsBytes = utils::readBytes(m_file, 128);
+
+           /*for(int64_t i = 0; i < 32; i++)
+		   {
+               int64_t start = i * 4;
+               int64_t end = (i + 1) * 4;
+			   core::NID nid = core::readNID(utils::slice(rgnidsBytes, start, end, (int64_t)4));
+               types::NIDType nidType = nid.getNIDType();
+               std::string nidTypeString = utils::NIDTypeToString(nidType);
+               if (nidType == types::NIDType::NORMAL_FOLDER)
+               {
+                   ASSERT((nid.nidIndex == 1024), 
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+               }
+               else if (nidType == types::NIDType::SEARCH_FOLDER)
+               {
+                   ASSERT((nid.nidIndex == 16384), 
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+               }
+               else if (nidType == types::NIDType::NORMAL_MESSAGE)
+               {
+                   ASSERT((nid.nidIndex == 65536), 
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nid.nidIndex);
+               }
+               else
+               {
+                   ASSERT((nid.nidIndex == 1024), 
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+               }
+               LOG("NID: %s", utils::NIDTypeToString(nidType).c_str());
+		   }*/
 
            /*
            * qwUnused (8 bytes): Unused space; MUST be set to zero. Unicode PST file format only. 
@@ -271,7 +303,6 @@ namespace reader
            * bSentinel (1 types::byte_t): MUST be set to 0x80. 
            */
            std::vector<types::byte_t> bSentinel = utils::readBytes(m_file, 1);
-           //std::cout << toHexString(bSentinel) << std::endl;
            utils::isEqual(bSentinel, { 0x80 }, "bSentinel");
 
            /*
