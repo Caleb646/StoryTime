@@ -37,11 +37,11 @@ namespace reader {
 		{
 			/// (2 bytes): The byte offset to the HN page Map record (section 2.3.1.5), with respect to the 
 			/// beginning of the HNHDR structure. 
-			int16_t ibHnpm{};
+			int64_t ibHnpm{};
 			/// (1 byte): Block signature; MUST be set to 0xEC to indicate an HN. 
-			int16_t bSig{};
+			int64_t bSig{};
 			/// (1 byte): Client signature.
-			int16_t bClientSig{};
+			int64_t bClientSig{};
 			/// (4 bytes): HID that points to the User Root record. The User Root 
 			/// record contains data that is specific to the higher level. 
 			int64_t hidUserRoot{};
@@ -433,16 +433,19 @@ namespace reader {
 		private:
 			void _init()
 			{
-				std::vector<ndb::BBTEntry*> bbtEntries = m_ndb.getAll<ndb::BBTEntry>();
-				std::vector<ndb::NBTEntry*> nbtEntries = m_ndb.getAll<ndb::NBTEntry>();
-				LOG("[INFO] Found %i BBTEntries", bbtEntries.size());
-				LOG("[INFO] Found %i NBTEntries", nbtEntries.size());
+				//auto entry = m_ndb.find<ndb::NBTEntry>(types::NIDType::MESSAGE_STORE, ndb::NDB::matchNIDType);
+				//std::vector<ndb::BBTEntry*> bbtEntries = m_ndb.getAll<ndb::BBTEntry>();
+				//std::vector<ndb::NBTEntry*> nbtEntries = m_ndb.getAll<ndb::NBTEntry>();
+				//LOG("[INFO] Found %i BBTEntries", bbtEntries.size());
+				//LOG("[INFO] Found %i NBTEntries", nbtEntries.size());
 
-				ndb::DataTree dataTree = m_ndb.readDataTree(bbtEntries[0]->bref, bbtEntries[0]->cb);
-				_setupHN(dataTree);
+				//LOG("[INFO] Found Message Store", entry->bidData.bidIndex);
+
+				//ndb::DataTree dataTree = m_ndb.readDataTree(bbtEntries[0]->bref, bbtEntries[0]->cb);
+				//_readHN(dataTree);
 			}
 
-			void _setupHN(ndb::DataTree& tree)
+			void _readHN(ndb::DataTree& tree)
 			{
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
 
@@ -453,8 +456,9 @@ namespace reader {
 				}
 			}
 
-			HNHDR _readHNHDR(const std::vector<types::byte_t>& bytes, int dataBlockIdx, int64_t nDataBlocks)
+			HNHDR _readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
 			{
+				LOG("[INFO] Data Block Size: %i", bytes.size());
 				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
 				HNHDR hnhdr{};
 				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<decltype(hnhdr.ibHnpm)>);
@@ -463,13 +467,13 @@ namespace reader {
 				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<decltype(hnhdr.hidUserRoot)>);
 				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
 
-				ASSERT((hnhdr.bSig == 0xEC), "[ERROR] Invalid HN signature");
+				ASSERT((hnhdr.bSig == static_cast<decltype(hnhdr.bSig)>(0xEC) ), "[ERROR] Invalid HN signature");
 				ASSERT( (utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES) ), "[ERROR] Invalid BType");
 				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");
 
 				if (nDataBlocks < 8) 
 				{
-					for (int64_t i = nDataBlocks - 1; i < 8; i++)
+					for (int64_t i = nDataBlocks; i < 8; i++)
 					{
 						ASSERT(((int16_t)hnhdr.rgbFillLevel[i] == (int16_t)types::FillLevel::LEVEL_EMPTY),
 							"[ERROR] Fill level must be empty for block at idx [%i]", i);

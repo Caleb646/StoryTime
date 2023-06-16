@@ -53,23 +53,16 @@ namespace reader {
 
         struct BlockTrailer
         {
-            /*
-            * cb (2 bytes): The amount of data, in bytes, contained within the data section of the block.
-            *   This value does not include the block trailer or any unused bytes that can exist after the end
-            *   of the data and before the start of the block trailer.
-            *
-            * wSig (2 bytes): Block signature. See section 5.5
-            *   for the algorithm to calculate the block signature.
-            *
-            * dwCRC (4 bytes): 32-bit CRC of the cb bytes of raw data, see section 5.3 for the algorithm to calculate the CRC.
-            *   Note the locations of the dwCRC and bid are differs between the Unicode and ANSI version of this structure.
-            *
-            * bid (Unicode: 8 bytes; ANSI 4 bytes): The BID (section 2.2.2.2) of the data block.
-            */
-
+            /// (2 bytes): The amount of data, in bytes, contained within the data section of the block.
+            /// This value does not include the block trailer or any unused bytes that can exist after the end
+            /// of the data and before the start of the block trailer.
             int64_t cb{};
+            /// (2 bytes): Block signature. See section 5.5
+            /// *for the algorithm to calculate the block signature.
             int64_t wSig{};
+            /// (4 bytes): 32-bit CRC of the cb bytes of raw data, see section 5.3 for the algorithm to calculate the CRC.
             int64_t dwCRC{};
+            /// (Unicode: 8 bytes; ANSI 4 bytes): The BID (section 2.2.2.2) of the data block.
             core::BID bid{};
         };
 
@@ -96,7 +89,7 @@ namespace reader {
             /// BREF (Unicode: 16 bytes; ANSI: 8 bytes): BREF structure (section 2.2.2.4) that points to the child BTPAGE.
             core::BREF bref{};
         public:
-            static int64_t id() { return 0; }
+            static int64_t id() { return 1; }
         };
 
         class BBTEntry : public Entry
@@ -115,7 +108,7 @@ namespace reader {
             std::uint32_t dwPadding{};
 
         public:
-            static int64_t id() { return 1; }
+            static int64_t id() { return 2; }
         };
 
         class NBTEntry : public Entry
@@ -152,7 +145,7 @@ namespace reader {
 
         public:
             bool hasSubNode() const { return bidSub.bidIndex != 0; }
-            static int64_t id() { return 2; }
+            static int64_t id() { return 3; }
         };
 
         class BTPage
@@ -215,10 +208,7 @@ namespace reader {
                     return NBTEntry::id();
                 }
 
-                else if (
-                    (cLevel > 0 && pagePtype == types::PType::BBT) 
-                    ||
-                    (cLevel > 0 && pagePtype == types::PType::NBT)) // BTENTRY 
+                else if (cLevel > 0) // BTENTRY 
                 {
                     return BTEntry::id();
                 }
@@ -350,22 +340,25 @@ namespace reader {
         public:
             NDB(
                 std::ifstream& file,
-                core::BREF rootNBTFilePos,
-                core::BREF rootBBTFilePos)
+                core::Header header)
                 :
                 m_file(file),
-                m_rootNBTFilePos(rootNBTFilePos),
-                m_rootBBTFilePos(rootBBTFilePos)
+                m_header(header)
             {
                 _init();
             }
 
 
             template<typename E, typename T>
-            const E* find(T a, bool(*match)(const T& a, const E* b))
+            const E* find(const T& a, bool(*match)(const T& a, const E* b))
             {
                 const E* returnEntry{ nullptr };
-                for(BTPage& page : m_rootNBT.subPages)
+                BTPage& rootBTree = m_rootNBT;
+
+                if(BBTEntry::id() == E::id())
+					rootBTree = m_rootBBT;
+
+                for(BTPage& page : rootBTree.subPages)
 				{
 					if (page.getEntryType() == E::id())
 					{
@@ -407,18 +400,19 @@ namespace reader {
                 // Get all of the NBT entries
                 else if ( NBTEntry::id() == E::id() )
 				{
-                    for (BTPage& page : m_rootNBT.subPages)
-                    {
-                        // Don't want BT Entries
-                        if (page.getEntryType() == E::id())
-                        {
-                            for (Entry* entry : page.rgentries)
-                            {
-                                E* b = static_cast<E*>(entry);
-                                returnEntries.push_back(b);
-                            }
-                        }
-                    }
+                    ASSERT(false, "[ERROR] NBTEntry is not supported");
+                    //for (BTPage& page : m_rootNBT.subPages)
+                    //{
+                    //    // Don't want BT Entries
+                    //    if (page.getEntryType() == E::id())
+                    //    {
+                    //        for (Entry* entry : page.rgentries)
+                    //        {
+                    //            E* b = static_cast<E*>(entry);
+                    //            returnEntries.push_back(b);
+                    //        }
+                    //    }
+                    //}
 				}
 				return returnEntries;
 			}
@@ -447,9 +441,9 @@ namespace reader {
             DataTree readDataTree(core::BREF blockBref, int64_t sizeofBlockData)
             {
                 /*
-                * data (236 bytes): Raw data.
+                * data (variable): Raw data.
                 *
-                * padding (4 bytes): Reserved.
+                * padding (variable, optional): Reserved.
                 *
                 * cb (2 bytes):
                 *   The amount of data, in bytes, contained within the data section of the block.
@@ -482,20 +476,29 @@ namespace reader {
                 // The block size is the smallest multiple of 64 that can hold both the data and the block trailer.
                 int64_t blockSize = (sizeofBlockData + blockTrailerSize) + offset;
 
+                ASSERT((blockSize % 64 == 0), 
+                    "[ERROR] Block Size must be a mutiple of 64");
+                ASSERT((blockSize <= 8192),
+                    "[ERROR] Block Size must less than or equal to the max blocksize of 8192");
+
                 m_file.seekg(blockBref.ib, std::ios::beg);
                 std::vector<types::byte_t> blockBytes = utils::readBytes(m_file, blockSize);
 
-                BlockTrailer trailer = _readBlockTrailer(utils::slice(
-                    blockBytes,
-                    blockBytes.size() - blockTrailerSize, blockBytes.size(),
-                    (size_t)blockTrailerSize));
+                BlockTrailer trailer = _readBlockTrailer(
+                    utils::slice(
+                        blockBytes,
+                        blockBytes.size() - blockTrailerSize, 
+                        blockBytes.size(),
+                        (size_t)blockTrailerSize
+                    )
+                );
 
                 ASSERT( (blockSize - (blockTrailerSize + offset) == trailer.cb), 
                     "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
 
                 if (!trailer.bid.isInternal()) // Data Block
                 {
-                    return DataTree(_readDataBlock(blockBytes, trailer));
+                    return DataTree(_readDataBlock(blockBytes, trailer, blockSize));
                 }
 
                 else if (trailer.bid.isInternal()) // XBlock or XXBlock
@@ -523,8 +526,8 @@ namespace reader {
 
             void _init()
             {
-			    m_rootNBT = _readBTPage(m_rootNBTFilePos, types::PType::NBT);
-				m_rootBBT = _readBTPage(m_rootBBTFilePos, types::PType::BBT);
+			    m_rootNBT = _readBTPage(m_header.root.nodeBTreeRootPage, types::PType::NBT);
+				m_rootBBT = _readBTPage(m_header.root.blockBTreeRootPage, types::PType::BBT);
 
                 _buildBTree(m_rootNBT);
                 _buildBTree(m_rootBBT);
@@ -537,15 +540,15 @@ namespace reader {
             {
                 types::PType rootPagePType = rootPage.pageTrailer.ptype;
                 auto rootPageCLevel = rootPage.cLevel;
+                ASSERT((rootPage.getEntryType() == BTEntry::id()), "[ERROR] Root BTPage must contain BTEntries");
+                ASSERT(( rootPagePType == types::PType::NBT || rootPagePType == types::PType::BBT), 
+                    "[ERROR] Root BTPage must be either NBT or BBT");
                 for (const Entry* entry : rootPage.rgentries)
                 {
-                    if (rootPage.getEntryType() == BTEntry::id())
-                    {
-                        const BTEntry* btentry = static_cast<const BTEntry*>(entry);
-                        rootPage.subPages.push_back(_readBTPage(btentry->bref, rootPagePType, rootPageCLevel));
-                    }
+                    const BTEntry* btentry = static_cast<const BTEntry*>(entry);
+                    rootPage.subPages.push_back(_readBTPage(btentry->bref, rootPagePType, rootPageCLevel));
                 }
-                LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
+                //LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
 
                 int idxProcessing = 0;
                 int maxIter = 1000;
@@ -560,10 +563,11 @@ namespace reader {
                             const BTEntry* btentry = static_cast<const BTEntry*>(entry);
                             rootPage.subPages.push_back(_readBTPage(btentry->bref, rootPagePType));
                         }
-                        maxIter--;
-                        idxProcessing++;
                     }
+                    maxIter--;
+                    idxProcessing++;
                 }
+                LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
             }
 
 
@@ -589,12 +593,12 @@ namespace reader {
                 */
                 NBTEntry entry{};
                 entry.nid = core::readNID(utils::slice(bytes, 0, 4, 4)); // NID is zero padded from 4 to 8
-                entry.bidData = core::readBID(utils::slice(bytes, 8, 16, 8), false);
-                entry.bidSub = core::readBID(utils::slice(bytes, 16, 24, 8), false);
+                entry.bidData = core::readBID(utils::slice(bytes, 8, 16, 8));
+                entry.bidSub = core::readBID(utils::slice(bytes, 16, 24, 8));
                 entry.nidParent = core::readNID(utils::slice(bytes, 24, 28, 4));
                 entry.dwPadding = utils::slice(bytes, 28, 32, 4, utils::toT_l<int64_t>);
-
-                LOG("[INFO] Created NBTEntry with [nid] of %s", utils::NIDTypeToString(entry.nid.nidType).c_str());
+                //ASSERT((entry.dwPadding == 0 || entry.dwPadding == 545), 
+                //   "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
                 return entry;
             }
 
@@ -616,21 +620,20 @@ namespace reader {
                 {
                     entry.nid = core::readNID(utils::slice(bytes, 0, 4, 4)); // NID is zero padded from 4 to 8
                     entry.idType = BTEntry::IDType::NID;
-                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16), false);
+                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16));
                 }
 
                 else if (pagePType == types::PType::BBT)
                 {
-                    entry.bid = core::readBID(utils::slice(bytes, 0, 8, 8), true);
+                    entry.bid = core::readBID(utils::slice(bytes, 0, 8, 8));
                     entry.idType = BTEntry::IDType::BID;
-                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16), true);
+                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16));
                 }
 
                 else
                 {
                     ASSERT(false, "[ERROR] Unknown Page [types::PType] %s for BTEntry", utils::PTypeToString(pagePType));
                 }
-                LOG("[INFO] Created BTEntry with Sub BTPage file position of %i", entry.bref.ib);
                 return entry;
             }
 
@@ -651,12 +654,13 @@ namespace reader {
                 */
                 ASSERT((bytes.size() == 24), "[ERROR] BBTEntry must be 24 bytes not %i", bytes.size());
                 BBTEntry entry{};
-                entry.bref = core::readBREF(utils::slice(bytes, 0, 16, 16), false);
+                entry.bref = core::readBREF(utils::slice(bytes, 0, 16, 16));
                 entry.cb = utils::slice(bytes, 16, 18, 2, utils::toT_l<uint16_t>);
                 entry.cRef = utils::slice(bytes, 18, 20, 2, utils::toT_l<uint16_t>);
                 entry.dwPadding = utils::slice(bytes, 20, 24, 4, utils::toT_l<uint32_t>);
 
-                ASSERT((entry.dwPadding == 0), "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
+                //ASSERT((entry.dwPadding == 0 || entry.dwPadding == 545), 
+                //    "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
                 return entry;
             }
 
@@ -705,7 +709,7 @@ namespace reader {
                 *   same value as their IB (that is, the absolute file offset of the page). The bidIndex
                 *   for other page types are allocated from the special bidNextP counter in the HEADER structure.
                 */
-                core::BID bid = core::readBID(utils::slice(pageTrailerBytes, 8, 16, 8), false);
+                core::BID bid = core::readBID(utils::slice(pageTrailerBytes, 8, 16, 8));
 
                 PageTrailer pt{};
                 pt.ptype = ptype;
@@ -714,7 +718,7 @@ namespace reader {
                 pt.dwCRC = dwCRC;
                 pt.bid = bid;
 
-                LOG("[INFO] Create Page Trailer w [ptype] %s", utils::PTypeToString(ptype).c_str());
+                //LOG("[INFO] Create Page Trailer w [ptype] %s", utils::PTypeToString(ptype).c_str());
 
                 return pt;
             }
@@ -761,7 +765,7 @@ namespace reader {
                 */
                 auto dwPadding = utils::slice(buffer, 4, 8, 4, utils::toT_l<decltype(BTPage::dwPadding)>);
 
-                LOG("%i %i", cbEnt, cLevel);
+                //LOG("%i %i", cbEnt, cLevel);
 
                 if (parentCLevel != -1)
                 {
@@ -817,6 +821,7 @@ namespace reader {
                     auto entryID = BTPage::getEntryType(pageType, cLevel);
                     if (entryID == NBTEntry::id()) // entries are NBTENTRY 
                     {
+                        ASSERT((cLevel == 0), "[ERROR] Leaf pages should have a cLevel of 0 not %i", cLevel);
                         NBTEntry* entry = new NBTEntry(_readNBTEntry(entryBytes));
                         entries.push_back(static_cast<Entry*>(entry));
                     }
@@ -829,6 +834,7 @@ namespace reader {
 
                     else if (entryID == BBTEntry::id()) // BBTENTRY (Leaf BBT Entry) 
                     {
+                        ASSERT((cLevel == 0), "[ERROR] Leaf pages should have a cLevel of 0 not %i", cLevel);
                         BBTEntry* entry = new BBTEntry(_readBBTEntry(entryBytes));
                         entries.push_back(static_cast<Entry*>(entry));
                     }
@@ -842,6 +848,7 @@ namespace reader {
                             i);
                     }
                 }
+                ASSERT((entries.size() == numEntries), "[ERROR] Invalid number of entries %i", entries.size());
                 return entries;
             }
 
@@ -867,14 +874,22 @@ namespace reader {
                 trailer.cb = utils::slice(bytes, 0, 2, 2, utils::toT_l<int64_t>);
                 trailer.wSig = utils::slice(bytes, 2, 4, 2, utils::toT_l<int64_t>);
                 trailer.dwCRC = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
-                trailer.bid = core::readBID(utils::slice(bytes, 8, 16, 8), true);
+                trailer.bid = core::readBID(utils::slice(bytes, 8, 16, 8));
                 return trailer;
             }
 
-            DataBlock _readDataBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer)
+            DataBlock _readDataBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize)
             {
+                ASSERT((blockBytes.size() == blockSize), "[ERROR] blockBytes.size() != blockSize");
+                std::vector<types::byte_t> data = utils::slice(blockBytes, (int64_t)0, trailer.cb, trailer.cb);
+                // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
+                utils::ms::CryptPermute(
+                    data.data(), 
+                    static_cast<int>(data.size()), 
+                    utils::ms::DATA_IS_ENCRYPTED);
+
                 DataBlock block{};
-                block.data = utils::slice(blockBytes, (int64_t)0, trailer.cb, trailer.cb);
+                block.data = std::move(data);
                 block.trailer = trailer;
                 return block;
             }
@@ -899,7 +914,7 @@ namespace reader {
                     int32_t start = i * bidSize;
                     int32_t end = ((int64_t)i + 1) * bidSize;
                     ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
-                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize), true));
+                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
                 }
                 return block;
             }
@@ -924,7 +939,7 @@ namespace reader {
                     int32_t start = i * bidSize;
                     int32_t end = ((int64_t)i + 1) * bidSize;
                     ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
-                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize), true));
+                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
                 }
                 return block;
             }
@@ -932,8 +947,7 @@ namespace reader {
 
         private:
             std::ifstream& m_file;
-            core::BREF m_rootNBTFilePos{};
-            core::BREF m_rootBBTFilePos{};
+            core::Header m_header{};
             BTPage m_rootNBT{};
             BTPage m_rootBBT{};
         };

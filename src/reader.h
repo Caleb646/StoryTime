@@ -17,51 +17,6 @@
 
 namespace reader
 {
-    
-    //typedef char types::byte_t;
-
-    // valid call log("float %0.2f", 1.0)
-    // formats must match vararg types
-
-    struct Header
-    {
-        std::vector<types::byte_t> root{ 72, '\0' }; // Only accepting unicode format so root should be 72 bytes in size.
-    };
-
-    struct Root
-    {
-        std::uint64_t fileSize{0};
-
-        /*
-        * BREFNBT(Unicode: 16 bytes; ANSI: 8 bytes) : A BREF structure(section 2.2.2.4) that references the
-        *   root page of the Node BTree(NBT).
-        *   The NBT contains references to all of the accessible nodes in the PST file. 
-        *   Its BTree implementation allows for efficient searches to locate any specific node. 
-        *   Each node reference is represented using a set of four properties that includes its NID, 
-        *   parent NID, data BID, and subnode BID. The data BID points to the block that contains the 
-        *   data associated with the node, and the subnode BID points to the block that contains references 
-        *   to subnodes of this node. Top-level NIDs are unique across the PST and are searchable from the NBT. 
-        *   Subnode NIDs are only unique within a node and are not searchable (or found) from the NBT. 
-        *   The parent NID is an optimization for the higher layers and has no meaning for the NDB Layer.
-        *
-        * BREFBBT(Unicode : 16 bytes; ANSI: 8 bytes) : A BREF
-        *   structure that references the root page of the Block BTree(BBT).
-        *   The BBT contains references to all of the data blocks of the PST file. Its BTree 
-        *   implementation allows for efficient searches to locate any specific block. A block 
-        *   reference is represented using a set of four properties, which includes its BID, IB, CB, 
-        *   and CREF. The IB is the offset within the file where the block is located. The CB is the 
-        *   count of bytes stored within the block. The CREF is the count of references to the data stored within the block.
-        */
-        core::BREF nodeBTreeRootPage{};
-        core::BREF blockBTreeRootPage{};
-
-        /*
-        * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3)
-        *  that contains the absolute file offset to the last AMap page of the PST file.
-        */
-        std::uint64_t ibAMapLast{};
-    };
-
     class PSTReader
     {
     public:
@@ -75,9 +30,7 @@ namespace reader
         void read()
         {
             _open(m_path);
-            m_header = _readHeader(m_file);
-            m_root = _readRoot(m_header);
-            ndb::NDB ndb(m_file, m_root.nodeBTreeRootPage, m_root.blockBTreeRootPage);
+            ndb::NDB ndb(m_file, _readHeader(m_file));
             ltp::LTP ltp(ndb);
         }
 
@@ -89,25 +42,25 @@ namespace reader
             ASSERT(m_file.is_open(), "[ERROR] Failed to open [file] %s", path.c_str());
         }
 
-        Root _readRoot(const Header& header)
+        core::Root _readRoot(const std::vector<types::byte_t>& bytes)
         {
             /*
             * dwReserved (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
             *  Creators of a new PST file MUST initialize this value to zero.
             */
-            utils::slice(header.root, 0, 4, 4);
+            utils::slice(bytes, 0, 4, 4);
 
             /*
             * ibFileEof (Unicode: 8 bytes; ANSI 4 bytes): The size of the PST file, in bytes. 
             */
-            std::uint64_t ibFileEof = utils::slice(header.root, 4, 12, 8, utils::toT_l<std::uint64_t>);
+            std::uint64_t ibFileEof = utils::slice(bytes, 4, 12, 8, utils::toT_l<std::uint64_t>);
             LOG("[INFO] [file size in bytes] %i", ibFileEof);
 
             /*
             * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3) 
             *  that contains the absolute file offset to the last AMap page of the PST file. 
             */
-            std::uint64_t ibAMapLast = utils::slice(header.root, 12, 20, 8, utils::toT_l<uint64_t>);
+            std::uint64_t ibAMapLast = utils::slice(bytes, 12, 20, 8, utils::toT_l<uint64_t>);
 
             /*
             * cbAMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all AMaps, combined. 
@@ -115,8 +68,8 @@ namespace reader
             * cbPMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all PMaps, combined. 
             *  Because the PMap is deprecated, this value SHOULD be zero. Creators of new PST files MUST initialize this value to zero.
             */
-            std::vector<types::byte_t> cbAMapFree = utils::slice(header.root, 20, 28, 8);
-            std::vector<types::byte_t> cbPMapFree = utils::slice(header.root, 28, 36, 8);
+            std::vector<types::byte_t> cbAMapFree = utils::slice(bytes, 20, 28, 8);
+            std::vector<types::byte_t> cbPMapFree = utils::slice(bytes, 28, 36, 8);
 
             /*
             * BREFNBT (Unicode: 16 bytes; ANSI: 8 bytes): A BREF structure (section 2.2.2.4) that references the 
@@ -133,23 +86,23 @@ namespace reader
             * 0x01 VALID_AMAP1 Deprecated. Implementations SHOULD NOT use this The AMaps are VALID.
             * 0x02 VALID_AMAP2 value. The AMaps are VALID.
             */
-            std::vector<types::byte_t> BREFNBT = utils::slice(header.root, 36, 52, 16);
-            std::vector<types::byte_t> BREFBBT = utils::slice(header.root, 52, 68, 16);
-            std::vector<types::byte_t> fAMapValid = utils::slice(header.root, 68, 69, 1);
+            std::vector<types::byte_t> BREFNBT = utils::slice(bytes, 36, 52, 16);
+            std::vector<types::byte_t> BREFBBT = utils::slice(bytes, 52, 68, 16);
+            std::vector<types::byte_t> fAMapValid = utils::slice(bytes, 68, 69, 1);
             LOG("[INFO] AMapValid state [is] %s", utils::toHexString(fAMapValid).c_str());
             /*
             * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
             *  Creators of a new PST file MUST initialize this value to zero.
             */
-            std::vector<types::byte_t> bReserved = utils::slice(header.root, 69, 70, 1);
+            std::vector<types::byte_t> bReserved = utils::slice(bytes, 69, 70, 1);
 
             /*
             * wReserved (2 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
             *  Creators of a new PST file MUST initialize this value to zero.
             */
-            std::vector<types::byte_t> wReserved = utils::slice(header.root, 70, 72, 2);
+            std::vector<types::byte_t> wReserved = utils::slice(bytes, 70, 72, 2);
 
-            Root myRoot{};
+            core::Root myRoot{};
             myRoot.fileSize = ibFileEof;
             myRoot.nodeBTreeRootPage = core::readBREF(BREFNBT, "Root Page for Node BTree");
             myRoot.blockBTreeRootPage = core::readBREF(BREFBBT, "Root Page for Block BTree");
@@ -157,24 +110,29 @@ namespace reader
             return myRoot;
         }
 
-        Header _readHeader(const std::ifstream& file)
+        core::Header _readHeader(const std::ifstream& file)
         {
+            ASSERT((m_file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            m_file.seekg(0);
+            ASSERT((m_file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            std::vector<types::byte_t> bytes = utils::readBytes(m_file, 564);
+
             /**
              * dwMagic (4 bytes): MUST be "{ 0x21, 0x42, 0x44, 0x4E } ("!BDN")". 
             */
-            std::vector<types::byte_t> dwMagic = utils::readBytes(m_file, 4);
+            std::vector<types::byte_t> dwMagic = utils::slice(bytes, 0, 4, 4);
             utils::isEqual(dwMagic, { 0x21, 0x42, 0x44, 0x4E });
 
             /**
              * dwCRCPartial (4 bytes): The 32-bit cyclic redundancy check (CRC) value 
              *  of the 471 bytes of data starting from wMagicClient (0ffset 0x0008)  
             */
-            std::vector<types::byte_t> dwCRCPartial = utils::readBytes(m_file, 4);
+            std::vector<types::byte_t> dwCRCPartial = utils::slice(bytes, 4, 8, 4);
 
             /**
              * wMagicClient (2 bytes): MUST be "{ 0x53, 0x4D }".  
             */
-            std::vector<types::byte_t> wMagicClient = utils::readBytes(m_file, 2);
+            std::vector<types::byte_t> wMagicClient = utils::slice(bytes, 8, 10, 2);
             utils::isEqual(wMagicClient, { 0x53, 0x4D });
 
             /**
@@ -185,45 +143,55 @@ namespace reader
                  Outlook of version that supports Windows Information Protection (WIP). 
                  The data MAY have been protected by WIP.  
             */
-            std::uint16_t wVer = utils::readBytes(m_file, 2, utils::toT_l<std::uint16_t>);
+            std::uint16_t wVer = utils::slice(bytes, 10, 12, 2, utils::toT_l<std::uint16_t>);
             ASSERT((wVer >= 23), "[ERROR] [wVer] %i was not greater than 23", wVer);
 
             /*
             * wVerClient (2 bytes): Client file format version. The version that corresponds to 
             * the format described in this document is 19. Creators of a new PST file 
             * based on this document SHOULD initialize this value to 19. 
-            * 
-            * bPlatformCreate (1 types::byte_t): This value MUST be set to 0x01. 
-            * 
-            * bPlatformAccess (1 types::byte_t): This value MUST be set to 0x01. 
+            */ 
+            std::uint16_t wVerClient = utils::slice(bytes, 12, 14, 2, utils::toT_l<std::uint16_t>);
+            ASSERT((wVerClient == 19), "[ERROR] [wVerClient] != 19 but %i", wVerClient);
 
-            * dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
+            /* bPlatformCreate (1 types::byte_t): This value MUST be set to 0x01. 
+            */ 
+            std::uint8_t bPlatformCreate = utils::slice(bytes, 14, 15, 1, utils::toT_l<std::uint8_t>);
+            ASSERT((bPlatformCreate == 0x01), "[ERROR] [bPlatformCreate] != 19 but %i", bPlatformCreate);
+
+            /* bPlatformAccess (1 types::byte_t): This value MUST be set to 0x01. 
+            */
+            std::uint8_t bPlatformAccess = utils::slice(bytes, 15, 16, 1, utils::toT_l<std::uint8_t>);
+            ASSERT((bPlatformAccess == 0x01), "[ERROR] [bPlatformCreate] != 19 but %i", bPlatformAccess);
+
+            /* dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
+             */
+            std::int32_t dwReserved1 = utils::slice(bytes, 16, 20, 4, utils::toT_l<std::int32_t>);
 
-            * dwReserved2 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
+            /* dwReserved2 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
             */
-            utils::readBytes(m_file, 12);
+            std::int32_t dwReserved2 = utils::slice(bytes, 20, 24, 4, utils::toT_l<std::int32_t>);
 
             /*
             * bidUnused (8 bytes Unicode only): Unused padding added when the Unicode PST file format was created. 
             */
-            utils::readBytes(m_file, 8);
+            std::int64_t bidUnused = utils::slice(bytes, 24, 32, 8, utils::toT_l<std::int64_t>);
 
             /*
             * bidNextP (Unicode: 8 bytes; ANSI: 4 bytes): Next page BID. 
             *   Pages have a special counter for allocating bidIndex values. 
             *   The value of bidIndex for BIDs for pages is allocated from this counter. 
             */
-            utils::readBytes(m_file, 8);
+            std::int64_t bidNextP = utils::slice(bytes, 32, 40, 8, utils::toT_l<std::int64_t>);
 
             /*
             * dwUnique (4 bytes): This is a monotonically-increasing value that is modified every time the 
             *  PST file's HEADER structure is modified. The function of this value is to provide a unique value, 
             *  and to ensure that the HEADER CRCs are different after each header modification.
             */
-
-            utils::readBytes(m_file, 4);
+            std::int64_t dwUnique = utils::slice(bytes, 40, 44, 4, utils::toT_l<std::int64_t>);
 
            /*
            * rgnid[] (128 bytes): A fixed array of 32 NIDs, each corresponding to one of the 
@@ -240,9 +208,9 @@ namespace reader
            *   NID_TYPE_ASSOC_MESSAGE 32768 (0x8000) 
            *   Any other NID_TYPE 1024 (0x400)
            */
-           std::vector<types::byte_t> rgnidsBytes = utils::readBytes(m_file, 128);
+           std::vector<types::byte_t> rgnidsBytes = utils::slice(bytes, 44, 172, 128);
 
-           /*for(int64_t i = 0; i < 32; i++)
+           for(int64_t i = 0; i < 32; i++)
 		   {
                int64_t start = i * 4;
                int64_t end = (i + 1) * 4;
@@ -251,41 +219,46 @@ namespace reader
                std::string nidTypeString = utils::NIDTypeToString(nidType);
                if (nidType == types::NIDType::NORMAL_FOLDER)
                {
-                   ASSERT((nid.nidIndex == 1024), 
+                   ASSERT((nid.nidIndex >= 1024),
                        "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
                }
                else if (nidType == types::NIDType::SEARCH_FOLDER)
                {
-                   ASSERT((nid.nidIndex == 16384), 
+                   ASSERT((nid.nidIndex >= 16384),
                        "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
                }
                else if (nidType == types::NIDType::NORMAL_MESSAGE)
                {
-                   ASSERT((nid.nidIndex == 65536), 
+                   ASSERT((nid.nidIndex >= 65536),
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nid.nidIndex);
+               }
+               else if (nidType == types::NIDType::MESSAGE_STORE)
+               {
+                   // There should be at least one Message Store NID per PST file
+                   ASSERT((nid.nidIndex >= 1025),
                        "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nid.nidIndex);
                }
                else
                {
-                   ASSERT((nid.nidIndex == 1024), 
+                   ASSERT((nid.nidIndex >= 1024), 
                        "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
                }
-               LOG("NID: %s", utils::NIDTypeToString(nidType).c_str());
-		   }*/
+		   }
 
            /*
            * qwUnused (8 bytes): Unused space; MUST be set to zero. Unicode PST file format only. 
            */
-           utils::readBytes(m_file, 8);
+           std::int64_t qwUnused = utils::slice(bytes, 172, 180, 8, utils::toT_l<std::int64_t>);
 
            /*
            * root (Unicode: 72 bytes; ANSI: 40 bytes): A ROOT structure
            */
-           std::vector<types::byte_t> root = utils::readBytes(m_file, 72);
+           std::vector<types::byte_t> root = utils::slice(bytes, 180, 252, 72);
 
            /*
            * dwAlign (4 bytes): Unused alignment bytes; MUST be set to zero. Unicode PST file format only.
            */
-           std::uint32_t dwAlign = utils::readBytes(m_file, 4, utils::toT_l<std::uint32_t>);
+           std::uint32_t dwAlign = utils::slice(bytes, 252, 256, 4, utils::toT_l<std::uint32_t>);
            ASSERT((dwAlign == 0), "[ERROR] [dwAlign] %i was not set to zero.", dwAlign);
             
            /*
@@ -295,14 +268,13 @@ namespace reader
            * rgbFP (128 bytes): Deprecated FPMap. This is no longer used and MUST be filled with 0xFF. 
            *  Readers SHOULD ignore the value of these bytes.
            */
-
-           std::vector<types::byte_t> rgb = utils::readBytes(m_file, 256);
-           //std::cout << toHexString(rgb) << "\n\n" << std::endl;
+           std::vector<types::byte_t> rgbFM = utils::slice(bytes, 256, 384, 128);
+           std::vector<types::byte_t> rgbFP = utils::slice(bytes, 384, 512, 128);
 
            /*
            * bSentinel (1 types::byte_t): MUST be set to 0x80. 
            */
-           std::vector<types::byte_t> bSentinel = utils::readBytes(m_file, 1);
+           std::vector<types::byte_t> bSentinel = utils::slice(bytes, 512, 513, 1);
            utils::isEqual(bSentinel, { 0x80 }, "bSentinel");
 
            /*
@@ -315,13 +287,14 @@ namespace reader
            * 0x02 NDB_CRYPT_CYCLIC Encoded with the Cyclic algorithm (section 5.2). 
            * 0x10 NDB_CRYPT_EDPCRYPTED Encrypted with Windows Information Protection. 
            */
-           std::vector<types::byte_t> bCryptMethod = utils::readBytes(m_file, 1);
-           LOG("[bCryptMethod] %s", utils::toHexString(bCryptMethod).c_str());
+           uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
+           ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "[ERROR] Invalid Encryption");
+           //LOG("[bCryptMethod] %s", utils::toHexString(bCryptMethod).c_str());
             
            /*
            * rgbReserved (2 bytes): Reserved; MUST be set to zero.
            */
-           std::vector<types::byte_t> rgbReserved = utils::readBytes(m_file, 2);
+           std::vector<types::byte_t> rgbReserved = utils::slice(bytes, 514, 516, 2);
            utils::isEqual(rgbReserved, { 0x00, 0x00 }, "rgbReserved");
 
            /*
@@ -330,37 +303,36 @@ namespace reader
            *  BID to be assigned for the next allocated block. BID values advance in increments of 4. 
            *  For more details, see section 2.2.2.2.
            */
-           utils::readBytes(m_file, 8);
+           std::vector<types::byte_t> bidNextB = utils::slice(bytes, 516, 524, 8);
 
            /*
            * dwCRCFull (4 bytes): The 32-bit CRC value of the 516 bytes of data starting from 
            *  wMagicClient to bidNextB, inclusive. Unicode PST file format only. 
            */
-
+           std::vector<types::byte_t> dwCRCFull = utils::slice(bytes, 524, 528, 4);
            /*
            * rgbReserved2 (3 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
            * Creators of a new PST MUST initialize this value to zero.
            */
-           std::vector<types::byte_t> rgbReserved2 = utils::readBytes(m_file, 3);
-           //isEqual(rgbReserved2, { 0x00, 0x00, 0x00 }, "rgbReserved2");
+           std::vector<types::byte_t> rgbReserved2 = utils::slice(bytes, 528, 531, 3);
+           //utils::isEqual(rgbReserved2, { 0x00, 0x00, 0x00 }, "rgbReserved2");
 
            /*
            * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
            *  Creators of a new PST file MUST initialize this value to zero.
            */
-           std::vector<types::byte_t> bReserved = utils::readBytes(m_file, 1);
-           //isEqual(bReserved, { 0x00 }, "bReserved");
+           std::vector<types::byte_t> bReserved = utils::slice(bytes, 531, 532, 1);
+           //utils::isEqual(bReserved, { 0x00 }, "bReserved");
 
            /*
            * rgbReserved3 (32 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
            *  Creators of a new PST MUST initialize this value to zero.
            */
-           std::vector<types::byte_t> rgbReserved3 = utils::readBytes(m_file, 32);
-           std::vector<types::byte_t> B(32, 0x00);
-           //isEqual(rgbReserved3, B, "rgbReserved3");
+           std::vector<types::byte_t> rgbReserved3 = utils::slice(bytes, 532, 564, 32);
+           //utils::isEqual(rgbReserved3, std::vector<types::byte_t>(32, 0x00), "rgbReserved3");
 
-           Header header{};
-           header.root = root;
+           core::Header header{};
+           header.root = _readRoot(root);
 
            return header;
         }
@@ -368,10 +340,6 @@ namespace reader
     private:
         std::ifstream m_file;
         std::string m_path;
-        std::string m_encoding{ "UNICODE" };
-
-        Header m_header{};
-        Root m_root{};
     };
 }
 

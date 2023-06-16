@@ -39,6 +39,7 @@ namespace reader {
             RECIPIENT_TABLE = 0x12,         // NID_TYPE_RECIPIENT_TABLE            Recipient table (TC)
             SEARCH_TABLE_INDEX = 0x13,      // NID_TYPE_SEARCH_TABLE_INDEX         Internal, persisted view-related
             LTP = 0x1F,                     // NID_TYPE_LTP                        LTP
+            MESSAGE_STORE = 0x21,		    // NID_TYPE_MESSAGE_STORE              Message store (PC)
             INVALID
         };
 
