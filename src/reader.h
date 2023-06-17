@@ -157,12 +157,12 @@ namespace reader
             /* bPlatformCreate (1 types::byte_t): This value MUST be set to 0x01. 
             */ 
             std::uint8_t bPlatformCreate = utils::slice(bytes, 14, 15, 1, utils::toT_l<std::uint8_t>);
-            ASSERT((bPlatformCreate == 0x01), "[ERROR] [bPlatformCreate] != 19 but %i", bPlatformCreate);
+            ASSERT((bPlatformCreate == 0x01), "[ERROR] [bPlatformCreate] != 0x01 but %i", bPlatformCreate);
 
             /* bPlatformAccess (1 types::byte_t): This value MUST be set to 0x01. 
             */
             std::uint8_t bPlatformAccess = utils::slice(bytes, 15, 16, 1, utils::toT_l<std::uint8_t>);
-            ASSERT((bPlatformAccess == 0x01), "[ERROR] [bPlatformCreate] != 19 but %i", bPlatformAccess);
+            ASSERT((bPlatformAccess == 0x01), "[ERROR] [bPlatformCreate] != 0x01 but %i", bPlatformAccess);
 
             /* dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
@@ -209,41 +209,43 @@ namespace reader
            *   Any other NID_TYPE 1024 (0x400)
            */
            std::vector<types::byte_t> rgnidsBytes = utils::slice(bytes, 44, 172, 128);
+           core::NID nids[32];
 
-           for(int64_t i = 0; i < 32; i++)
-		   {
+           for (int64_t i = 0; i < 32; i++)
+           {
                int64_t start = i * 4;
                int64_t end = (i + 1) * 4;
-			   core::NID nid = core::readNID(utils::slice(rgnidsBytes, start, end, (int64_t)4));
-               types::NIDType nidType = nid.getNIDType();
+               nids[i] = core::readNID(utils::slice(rgnidsBytes, start, end, (int64_t)4));
+           }
+
+           for (int64_t i = 0; i < 32; i++)
+           {
+               uint32_t nidIndex = nids[i].getNIDIndex();
+               types::NIDType nidType = nids[i].getNIDType();
                std::string nidTypeString = utils::NIDTypeToString(nidType);
-               if (nidType == types::NIDType::NORMAL_FOLDER)
+
+               if ((types::NIDType)i == types::NIDType::NORMAL_FOLDER)
                {
-                   ASSERT((nid.nidIndex >= 1024),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+                   ASSERT((nidIndex >= 1024),
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
                }
-               else if (nidType == types::NIDType::SEARCH_FOLDER)
+               else if ((types::NIDType)i == types::NIDType::SEARCH_FOLDER)
                {
-                   ASSERT((nid.nidIndex >= 16384),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+                   ASSERT((nidIndex >= 16384),
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
                }
-               else if (nidType == types::NIDType::NORMAL_MESSAGE)
+               else if ((types::NIDType)i == types::NIDType::NORMAL_MESSAGE)
                {
-                   ASSERT((nid.nidIndex >= 65536),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nid.nidIndex);
-               }
-               else if (nidType == types::NIDType::MESSAGE_STORE)
-               {
-                   // There should be at least one Message Store NID per PST file
-                   ASSERT((nid.nidIndex >= 1025),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nid.nidIndex);
+                   ASSERT((nidIndex >= 65536),
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nidIndex);
                }
                else
                {
-                   ASSERT((nid.nidIndex >= 1024), 
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nid.nidIndex);
+                   ASSERT((nidIndex >= 1024),
+                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
                }
-		   }
+           }
+
 
            /*
            * qwUnused (8 bytes): Unused space; MUST be set to zero. Unicode PST file format only. 

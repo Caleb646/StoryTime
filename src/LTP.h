@@ -430,33 +430,29 @@ namespace reader {
 			{
 				_init();
 			}
-		private:
+		public:
 			void _init()
 			{
-				//auto entry = m_ndb.find<ndb::NBTEntry>(types::NIDType::MESSAGE_STORE, ndb::NDB::matchNIDType);
-				//std::vector<ndb::BBTEntry*> bbtEntries = m_ndb.getAll<ndb::BBTEntry>();
-				//std::vector<ndb::NBTEntry*> nbtEntries = m_ndb.getAll<ndb::NBTEntry>();
-				//LOG("[INFO] Found %i BBTEntries", bbtEntries.size());
-				//LOG("[INFO] Found %i NBTEntries", nbtEntries.size());
 
-				//LOG("[INFO] Found Message Store", entry->bidData.bidIndex);
-
-				//ndb::DataTree dataTree = m_ndb.readDataTree(bbtEntries[0]->bref, bbtEntries[0]->cb);
-				//_readHN(dataTree);
+				auto nbtentry = m_ndb.getNID(core::NID_MESSAGE_STORE);
+				auto bbtentry = m_ndb.getBID(nbtentry.bidData);
+				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
+				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
+				_readHN(dataTree);
 			}
 
 			void _readHN(ndb::DataTree& tree)
 			{
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
 
-				HNHDR hnHdr = _readHNHDR(tree.dataBlocks.at(0).data, 0, tree.dataBlocks.size());
+				HNHDR hnHdr = LTP::readHNHDR(tree.dataBlocks.at(0).data, 0, tree.dataBlocks.size());
 				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
 				{
 					const ndb::DataBlock& block = tree.dataBlocks.at(i);
 				}
 			}
 
-			HNHDR _readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
+			static HNHDR readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
 			{
 				LOG("[INFO] Data Block Size: %i", bytes.size());
 				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
@@ -467,6 +463,8 @@ namespace reader {
 				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<decltype(hnhdr.hidUserRoot)>);
 				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
 
+				uint32_t hidType = hnhdr.hidUserRoot & 0x1F;
+				ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType)
 				ASSERT((hnhdr.bSig == static_cast<decltype(hnhdr.bSig)>(0xEC) ), "[ERROR] Invalid HN signature");
 				ASSERT( (utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES) ), "[ERROR] Invalid BType");
 				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");

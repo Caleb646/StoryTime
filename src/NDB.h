@@ -66,33 +66,21 @@ namespace reader {
             core::BID bid{};
         };
 
-        class Entry {};
-
-        class BTEntry : public Entry
+        class BTEntry
         {
         public:
-            enum class IDType {
-                INVALID,
-                BID,
-                NID
-            };
-            /*
-            * btkey (Unicode: 8 bytes; ANSI: 4 bytes): The key value associated with this BTENTRY.
-            *   All the entries in the child BTPAGE referenced by BREF have key values greater than
-            *   or equal to this key value. The btkey is either an NID (zero extended to 8 bytes for Unicode PSTs)
-            *   or a BID, depending on the ptype of the page.
-            */
-            core::BID bid{}; // Only NID or BID is Valid
-            core::NID nid{};
-            IDType idType{ IDType::INVALID };
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): The key value associated with this BTENTRY
+            /// The btkey is either an NID (zero extended to 8 bytes for Unicode PSTs)
+            /// or a BID, depending on the ptype of the page.
+            std::vector<types::byte_t> btkey{};
 
-            /// BREF (Unicode: 16 bytes; ANSI: 8 bytes): BREF structure (section 2.2.2.4) that points to the child BTPAGE.
+            /// (Unicode: 16 bytes): BREF structure (section 2.2.2.4) that points to the child BTPAGE.
             core::BREF bref{};
         public:
-            static int64_t id() { return 1; }
+            static constexpr int64_t id() { return 1; }
         };
 
-        class BBTEntry : public Entry
+        class BBTEntry
         {
         public:
             /// BREF (Unicode: 16 bytes; ANSI: 8 bytes): BREF structure (section 2.2.2.4) that contains the BID and
@@ -108,10 +96,10 @@ namespace reader {
             std::uint32_t dwPadding{};
 
         public:
-            static int64_t id() { return 2; }
+            static constexpr int64_t id() { return 2; }
         };
 
-        class NBTEntry : public Entry
+        class NBTEntry
         {
         public:
             /*
@@ -144,8 +132,71 @@ namespace reader {
             int64_t dwPadding{};
 
         public:
-            bool hasSubNode() const { return bidSub.bidIndex != 0; }
-            static int64_t id() { return 3; }
+            bool hasSubNode() const { return bidSub.getBidIndex() != 0; }
+            static constexpr int64_t id() { return 3; }
+        };
+
+        class Entry 
+        {
+        public:
+            Entry(const std::vector<types::byte_t>& data) : m_data(data) {}
+
+            BTEntry asBTEntry() const
+            {
+                ASSERT((m_data.size() == 24), "[ERROR] Incorrect size for BTEntry");
+                BTEntry entry{};
+                entry.btkey = utils::slice(m_data, 0, 8, 8);
+                entry.bref = core::readBREF(utils::slice(m_data, 8, 24, 16));
+                return entry;
+            }
+
+            BBTEntry asBBTEntry() const
+            {
+                ASSERT((m_data.size() == 24), "[ERROR] BBTEntry must be 24 bytes not %i", m_data.size());
+                BBTEntry entry{};
+                entry.bref = core::readBREF(utils::slice(m_data, 0, 16, 16));
+                entry.cb = utils::slice(m_data, 16, 18, 2, utils::toT_l<uint16_t>);
+                entry.cRef = utils::slice(m_data, 18, 20, 2, utils::toT_l<uint16_t>);
+                entry.dwPadding = utils::slice(m_data, 20, 24, 4, utils::toT_l<uint32_t>);
+
+                //ASSERT((entry.dwPadding == 0),
+                //    "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
+                return entry;
+            }
+
+            NBTEntry asNBTEntry() const
+            {
+                ASSERT((m_data.size() == 32), "[ERROR] NBTEntry must be 32 bytes not %i", m_data.size());
+                NBTEntry entry{};
+                entry.nid = core::readNID(utils::slice(m_data, 0, 4, 4)); // NID is zero padded from 4 to 8
+                entry.bidData = core::readBID(utils::slice(m_data, 8, 16, 8));
+                entry.bidSub = core::readBID(utils::slice(m_data, 16, 24, 8));
+                entry.nidParent = core::readNID(utils::slice(m_data, 24, 28, 4));
+                entry.dwPadding = utils::slice(m_data, 28, 32, 4, utils::toT_l<int64_t>);
+                //ASSERT((entry.dwPadding == 0),
+                //   "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
+                return entry;
+            }
+
+            template<typename E>
+            E as() const
+			{
+                if constexpr (E::id() == BTEntry::id())
+				    return asBTEntry();
+
+			    else if constexpr (E::id() == BBTEntry::id())
+					return asBBTEntry();
+
+				else if constexpr (E::id() == NBTEntry::id())
+					return asNBTEntry();
+
+				ASSERT(false, "[ERROR] Invalid Type");
+                return E();
+			}
+
+            size_t size() const { return m_data.size(); }
+        private:
+            std::vector<types::byte_t> m_data{};
         };
 
         class BTPage
@@ -156,7 +207,7 @@ namespace reader {
             /// The entries in the array depend on the value of the cLevel field. If cLevel is greater than 0,
             /// then each entry in the array is of type BTENTRY.If cLevel is 0, then each entry is either of type
             /// BBTENTRY or NBTENTRY, depending on the ptype of the page.
-            std::vector<Entry*> rgentries{};
+            std::vector<Entry> rgentries{};
 
             /*
             * BTree Type          cLevel             rgentries structure      cbEnt (bytes)
@@ -186,12 +237,6 @@ namespace reader {
             PageTrailer pageTrailer{};
 
         public:
-            template<typename E, typename T>
-            E* find(T a, bool(*match)(const T& a, const E* b))
-            {
-                E* returnEntry{nullptr};
-                return returnEntry;
-            }
 
             int64_t getEntryType() const
             {
@@ -222,22 +267,221 @@ namespace reader {
                 return -1;
             }
 
+            bool hasBTEntries() const
+			{
+				return getEntryType() == BTEntry::id();
+			}
+
+            bool hasBBTEntries() const
+            {
+                return getEntryType() == BBTEntry::id();
+			}
+
+            bool hasNBTEntries() const
+            {
+                return getEntryType() == NBTEntry::id();
+            }
+
             bool isLeafPage() const
             {
                 return getEntryType() == BBTEntry::id() || getEntryType() == NBTEntry::id();
             }
 
-            bool verify()
+            bool verify() const
             {
-                types::PType ptype = pageTrailer.ptype;
-                for (const BTPage& page : subPages)
+                _verify(*this);
+                for(size_t i = 0; i < subPages.size(); i++)
                 {
-                    ASSERT((page.pageTrailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
-                    ASSERT((page.cEnt == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
-                    ASSERT((page.getEntryType() != -1), "[ERROR] Subpage has invalid entry type.");
+                    const BTPage& page = subPages.at(i);
+                    _verify(page);
                 }
                 return true;
             }
+
+
+            static BTPage readBTPage(
+                const std::vector<types::byte_t>& btBytes,
+                types::PType treeType,
+                int64_t parentCLevel = -1,
+                core::BREF* btPageBref = nullptr)
+            {
+                /*
+                * Entries of the BTree array. The entries in the array depend on the value of the cLevel field.
+                *   If cLevel is greater than 0, then each entry in the array is of type BTENTRY. If cLevel is 0,
+                *   then each entry is either of type BBTENTRY or NBTENTRY, depending on the ptype of the page.
+                */
+                std::vector<types::byte_t> rgentriesBytes = utils::slice(btBytes, 0, 488, 488);
+                /*
+                * cEnt (1 byte): The number of BTree entries stored in the page data.
+                *
+                * cEntMax (1 byte): The maximum number of entries that can fit inside the page data.
+                *
+                * cbEnt (1 byte): The size of each BTree entry, in bytes. Note that in some cases, cbEnt can be
+                *   greater than the corresponding size of the corresponding rgentries structure because of alignment or other
+                *   considerations. Implementations MUST use the size specified in cbEnt to advance to the next entry.
+                *
+                *   BTree Type        cLevel      rgentries structure         cbEnt (bytes)
+                *    NBT                0           NBTENTRY                ANSI: 16, Unicode: 32
+                *    NBT           Greater than 0   BTENTRY                 ANSI: 12, Unicode: 24
+                *    BBT                0           BBTENTRY                ANSI: 12, Unicode: 24
+                *    BBT           Greater than 0   BTENTRY                 ANSI: 12, Unicode: 24
+                *
+                * cLevel (1 byte): The depth level of this page. Leaf pages have a level of zero,
+                *   whereas intermediate pages have a level greater than 0. This value determines the
+                *   type of the entries in rgentries, and is interpreted as unsigned.
+                */
+                std::vector<types::byte_t> buffer = utils::slice(btBytes, 488, 496, 8);
+
+                ASSERT((btBytes.size() == 512), "[ERROR] BTPage must be 512 bytes in size");
+
+                auto cEnt = utils::slice(buffer, 0, 1, 1, utils::toT_l<decltype(BTPage::cbEnt)>);
+                auto cEntMax = utils::slice(buffer, 1, 2, 1, utils::toT_l<decltype(BTPage::cEntMax)>);
+                auto cbEnt = utils::slice(buffer, 2, 3, 1, utils::toT_l<decltype(BTPage::cbEnt)>);
+                auto cLevel = utils::slice(buffer, 3, 4, 1, utils::toT_l<decltype(BTPage::cLevel)>);
+
+                /*
+                * dwPadding (Unicode: 4 bytes): Padding; MUST be set to zero. Note there is no padding in the ANSI version of this structure.
+                */
+                auto dwPadding = utils::slice(buffer, 4, 8, 4, utils::toT_l<decltype(BTPage::dwPadding)>);
+
+                if (parentCLevel != -1)
+                {
+                    ASSERT((parentCLevel - 1 == cLevel),
+                        "[ERROR] SubBTPage cLevel [%i] must be smaller than ParentBTPage cLevel [%i]", cLevel, parentCLevel);
+                }
+
+                PageTrailer pageTrailer = BTPage::readPageTrailer(
+                    utils::slice(btBytes, 496, 512, 16),
+                    btPageBref
+                );
+
+                /**
+                    * pageTrailer (Unicode: 16 bytes; ANSI: 12 bytes): A PAGETRAILER structure (section 2.2.2.7.1). The ptype
+                    *  subfield of pageTrailer MUST be set to ptypeBBT for a Block BTree page, or ptypeNBT for a Node BTree page.
+                    *  The other subfields of pageTrailer MUST be set as specified in section 2.2.2.7.1.
+                */
+
+                ASSERT((pageTrailer.ptype == types::PType::BBT || pageTrailer.ptype == types::PType::NBT), "[ERROR] Invalid ptype for pagetrailer");
+                ASSERT((pageTrailer.ptype == treeType), "[ERROR] Pagetrailer types::PType and given Tree types::PType do not match");
+                ASSERT((cEnt <= cEntMax), "[ERROR] Invalid cEnt %i", cEnt);
+                ASSERT((dwPadding == 0), "[ERROR] dwPadding should be 0 not %i", dwPadding);
+
+                BTPage page{};
+                page.cEnt = cEnt;
+                page.cbEnt = cbEnt;
+                page.cEntMax = cEntMax;
+                page.cLevel = cLevel;
+                page.dwPadding = dwPadding;
+                page.pageTrailer = pageTrailer;
+                page.rgentries = BTPage::readEntries(rgentriesBytes, pageTrailer.ptype, cEnt, cbEnt, cEntMax, cLevel);
+                return page;
+            }
+
+            static std::vector<Entry> readEntries(
+                const std::vector<types::byte_t>& entriesInBytes,
+                types::PType pageType,
+                int64_t numEntries,
+                int64_t singleEntrySize,
+                int64_t maxNumberofEntries,
+                int64_t cLevel
+            )
+            {
+
+                ASSERT((numEntries * singleEntrySize <= maxNumberofEntries * singleEntrySize),
+                    "[ERROR] Exceeding maximum entries");
+
+                std::vector<Entry> entries{};
+                entries.reserve(numEntries * 2);
+                for (int64_t i = 0; i < numEntries; i++)
+                {
+                    int64_t start = i * singleEntrySize;
+                    int64_t end = (i + 1) * singleEntrySize;
+                    int64_t size = end - start;
+                    ASSERT((size == singleEntrySize),
+                        "[ERROR] Size should be %i NOT %i", singleEntrySize, size);
+                    std::vector<types::byte_t> entryBytes = utils::slice(entriesInBytes, start, end, size);
+
+                    /**
+                    * Entries of the BTree array. The entries in the array depend on the value of the cLevel field.
+                    *   If cLevel is greater than 0, then each entry in the array is of type BTENTRY. If cLevel is 0,
+                    *   then each entry is either of type BBTENTRY or NBTENTRY, depending on the ptype of the page.
+                    */
+                    entries.push_back(Entry(entryBytes));
+                }
+                ASSERT((entries.size() == numEntries), "[ERROR] Invalid number of entries %i", entries.size());
+                return entries;
+            }
+
+            static PageTrailer readPageTrailer(const std::vector<types::byte_t>& pageTrailerBytes, core::BREF* bref = nullptr)
+            {
+                /**
+                 * ptype (1 byte): This value indicates the type of data contained within the page. This field MUST contain one of the following values.
+                */
+                uint8_t ptypeByte = utils::slice(pageTrailerBytes, 0, 1, 1, utils::toT_l<uint8_t>);
+                types::PType ptype = utils::getPType(ptypeByte);
+
+                /*
+                * ptypeRepeat (1 byte): MUST be set to the same value as ptype.
+                */
+                uint8_t ptypeRepeatByte = utils::slice(pageTrailerBytes, 1, 2, 1, utils::toT_l<uint8_t>);
+                types::PType ptypeRepeat = utils::getPType(ptypeRepeatByte);
+
+                ASSERT((ptypeByte == ptypeRepeatByte), "Ptype [%i] and PtypeRepeat [%i]", ptypeByte, ptypeRepeatByte);
+
+                /*
+                * wSig (2 bytes): Page signature. This value depends on the value of the ptype field.
+                *   This value is zero (0x0000) for AMap, PMap, FMap, and FPMap pages. For BBT, NBT,
+                *   and DList pages, a page / block signature is computed (see section 5.5).
+                */
+                uint16_t wSig = utils::slice(pageTrailerBytes, 2, 4, 2, utils::toT_l<uint16_t>);
+                if (bref != nullptr)
+                {
+                    auto computedSig = utils::ms::ComputeSig(bref->ib, bref->bid.getBidRaw());
+                    if (ptype == types::PType::NBT || ptype == types::PType::BBT)
+                        ASSERT((wSig == computedSig), "[ERROR] Page Sig [%i] != Computed Sig [%i]", wSig, computedSig);
+                }
+                
+
+                /*
+                * dwCRC (4 bytes): 32-bit CRC of the page data, excluding the page trailer.
+                *   See section 5.3 for the CRC algorithm. Note the locations of the dwCRC and
+                *   bid are differs between the Unicode and ANSI version of this structure.
+                */
+                uint32_t dwCRC = utils::slice(pageTrailerBytes, 4, 8, 4, utils::toT_l<uint32_t>);
+
+                /*
+                * bid (Unicode: 8 bytes; ANSI 4 bytes): The BID of the page's block. AMap, PMap,
+                *   FMap, and FPMap pages have a special convention where their BID is assigned the
+                *   same value as their IB (that is, the absolute file offset of the page). The bidIndex
+                *   for other page types are allocated from the special bidNextP counter in the HEADER structure.
+                */
+                core::BID bid = core::readBID(utils::slice(pageTrailerBytes, 8, 16, 8));
+
+                PageTrailer pt{};
+                pt.ptype = ptype;
+                pt.ptypeRepeat = ptypeRepeat;
+                pt.wSig = wSig;
+                pt.dwCRC = dwCRC;
+                pt.bid = bid;
+                return pt;
+            }
+
+            private:
+                bool _verify(const BTPage& page) const
+                {
+                    types::PType ptype = pageTrailer.ptype;
+                    ASSERT((page.pageTrailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
+                    ASSERT((page.cEnt == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
+                    ASSERT((page.getEntryType() != -1), "[ERROR] Subpage has invalid entry type.");
+                    int entryIdx{ 0 };
+                    for (size_t i = 0; i < page.rgentries.size(); i++)
+                    {
+                        const Entry& entry = page.rgentries.at(i);
+                        ASSERT((entry.size() == page.cbEnt), "[ERROR] Entry Size mismatch");
+                        entryIdx++;
+                    }
+                    return true;
+                }
         };
 
         class Block {};
@@ -343,93 +587,138 @@ namespace reader {
                 core::Header header)
                 :
                 m_file(file),
-                m_header(header)
+                m_header(header),
+                m_rootNBT(_readBTPage(m_header.root.nodeBTreeRootPage, types::PType::NBT)),
+                m_rootBBT(_readBTPage(m_header.root.blockBTreeRootPage, types::PType::BBT))
             {
                 _init();
             }
 
-
-            template<typename E, typename T>
-            const E* find(const T& a, bool(*match)(const T& a, const E* b))
+            bool verify()
             {
-                const E* returnEntry{ nullptr };
-                BTPage& rootBTree = m_rootNBT;
+                m_rootNBT.verify();
+                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
+                {
+                    const BTPage& page = m_rootNBT.subPages.at(i);
+                    page.verify();
+      //              if (page.hasNBTEntries())
+      //              {
+      //                  for(size_t j = 0; j < page.rgentries.size(); j++)
+						//{
+      //                      const Entry& entry = page.rgentries.at(j);
+						//	const NBTEntry b = entry.asNBTEntry();
+      //                      int matches = countBID(b.bidData);
+						//	//ASSERT((matches == 1), "[ERROR] BID %i != 1", matches);
+      //                      //LOGIF((b.bidData.getBidRaw() == 0), "%i %i %i", i, j, matches);
+						//}
+      //              }
+                }
 
-                if(BBTEntry::id() == E::id())
-					rootBTree = m_rootBBT;
+                m_rootBBT.verify();
+                for (size_t i = 0; i < m_rootBBT.subPages.size(); i++)
+                {
+                    const BTPage& page = m_rootBBT.subPages.at(i);
+                    page.verify();
+                }
 
-                for(BTPage& page : rootBTree.subPages)
-				{
-					if (page.getEntryType() == E::id())
-					{
-                        for (const Entry* entry : page.rgentries)
-                        {
-                            const E* b = static_cast<const E*>(entry);
-                            if (match(a, b))
-                            {
-                                returnEntry = b;
-                                break;
-                            }
-                        }
-					}
-				}
-                ASSERT((returnEntry != nullptr), "[ERROR] unable to find");
-                return returnEntry;
+                ASSERT((countNID(core::NID_MESSAGE_STORE) == 1),
+                    "[ERROR] Cannot be more than 1 Message Store");
+                ASSERT((countNID(core::NID_NAME_TO_ID_MAP) == 1),
+                    "[ERROR]");
+                ASSERT((countNID(core::NID_NORMAL_FOLDER_TEMPLATE) <= 1),
+                    "[ERROR]");
+                ASSERT((countNID(core::NID_SEARCH_FOLDER_TEMPLATE) <= 1),
+                    "[ERROR]");
+                ASSERT((countNID(core::NID_ROOT_FOLDER) == 1),
+                    "[ERROR]");
+                ASSERT((countNID(core::NID_SEARCH_MANAGEMENT_QUEUE) <= 1),
+                    "[ERROR]");
+
+                return true;
             }
 
-            template<typename E>
-            std::vector<E*> getAll()
-			{
-                std::vector<E*> returnEntries{};
-                // Get all of the BBT entries
-                if ( BBTEntry::id() == E::id() )
+            BBTEntry getBID(core::BID bid)
+            {
+                for(size_t i = 0; i < m_rootBBT.subPages.size(); i++)
+				{
+					const BTPage& page = m_rootBBT.subPages.at(i);
+					if (page.hasBBTEntries())
+					{
+						for(size_t j = 0; j < page.rgentries.size(); j++)
+						{
+                            BBTEntry entry = page.rgentries.at(j).as<BBTEntry>();
+							if (entry.bref.bid == bid)
+							{
+								return entry;
+							}
+						}
+					}
+				}
+				ASSERT(false, "[ERROR] unable to find BID [%i] in BBTree", bid.getBidIndex());
+				return BBTEntry{};
+            }
+
+            NBTEntry getNID(core::NID nid)
+            {
+                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
                 {
-                    for (BTPage& page : m_rootBBT.subPages)
+                    const BTPage& page = m_rootNBT.subPages.at(i);
+                    if (page.hasNBTEntries())
                     {
-                        // Don't want BT Entries
-                        if ( page.getEntryType() == E::id() )
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
                         {
-                            for (Entry* entry : page.rgentries)
+                            NBTEntry entry = page.rgentries.at(j).as<NBTEntry>();
+                            if (entry.nid == nid)
                             {
-                                E* b = static_cast<E*>(entry);
-                                returnEntries.push_back(b);
+                                return entry;
                             }
                         }
                     }
                 }
-                // Get all of the NBT entries
-                else if ( NBTEntry::id() == E::id() )
-				{
-                    ASSERT(false, "[ERROR] NBTEntry is not supported");
-                    //for (BTPage& page : m_rootNBT.subPages)
-                    //{
-                    //    // Don't want BT Entries
-                    //    if (page.getEntryType() == E::id())
-                    //    {
-                    //        for (Entry* entry : page.rgentries)
-                    //        {
-                    //            E* b = static_cast<E*>(entry);
-                    //            returnEntries.push_back(b);
-                    //        }
-                    //    }
-                    //}
-				}
-				return returnEntries;
-			}
-
-            static bool matchBID(const core::BID& a, const BBTEntry* b)
-			{
-				return (a == b->bref.bid);
-			}
-
-            static bool matchNID(const core::NID& a, const NBTEntry* b)
-            {
-                return (a == b->nid);
+                ASSERT(false, "[ERROR] unable to find NID [%i] in NBTree", nid.getNIDRaw());
+                return NBTEntry{};
             }
 
-            static bool matchNIDType(const types::NIDType& a, const NBTEntry* b)
+            uint32_t countNID(core::NID nid)
             {
-                return (a == b->nid.getNIDType());
+                uint32_t count{ 0 };
+                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
+                {
+                    const BTPage& page = m_rootNBT.subPages.at(i);
+                    if (page.hasNBTEntries())
+                    {
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
+                        {
+                            NBTEntry entry = page.rgentries.at(j).as<NBTEntry>();
+                            if (entry.nid == nid)
+                            {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                return count;
+            }
+
+            uint32_t countBID(core::BID bid)
+            {
+                uint32_t count{ 0 };
+                for (size_t i = 0; i < m_rootBBT.subPages.size(); i++)
+                {
+                    const BTPage& page = m_rootBBT.subPages.at(i);
+                    if (page.hasBBTEntries())
+                    {
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
+                        {
+                            BBTEntry entry = page.rgentries.at(j).as<BBTEntry>();
+                            if (entry.bref.bid == bid)
+                            {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                return count;
             }
 
             /**
@@ -526,330 +815,60 @@ namespace reader {
 
             void _init()
             {
-			    m_rootNBT = _readBTPage(m_header.root.nodeBTreeRootPage, types::PType::NBT);
-				m_rootBBT = _readBTPage(m_header.root.blockBTreeRootPage, types::PType::BBT);
-
                 _buildBTree(m_rootNBT);
                 _buildBTree(m_rootBBT);
 
-                m_rootNBT.verify();
-                m_rootBBT.verify();
+                verify();
             }
 
             void _buildBTree(BTPage& rootPage)
             {
+                rootPage.subPages.reserve(500);
+
                 types::PType rootPagePType = rootPage.pageTrailer.ptype;
-                auto rootPageCLevel = rootPage.cLevel;
-                ASSERT((rootPage.getEntryType() == BTEntry::id()), "[ERROR] Root BTPage must contain BTEntries");
+                int64_t rootPageCLevel = rootPage.cLevel;
+
+                ASSERT((rootPage.hasBTEntries() == true), 
+                    "[ERROR] Root BTPage must contain BTEntries");
                 ASSERT(( rootPagePType == types::PType::NBT || rootPagePType == types::PType::BBT), 
                     "[ERROR] Root BTPage must be either NBT or BBT");
-                for (const Entry* entry : rootPage.rgentries)
+
+                for(size_t i = 0; i < rootPage.rgentries.size(); i++)
                 {
-                    const BTEntry* btentry = static_cast<const BTEntry*>(entry);
-                    rootPage.subPages.push_back(_readBTPage(btentry->bref, rootPagePType, rootPageCLevel));
+                    const Entry& entry = rootPage.rgentries.at(i);
+                    BTEntry btentry = entry.asBTEntry();
+                    rootPage.subPages.push_back(_readBTPage(btentry.bref, rootPagePType, rootPageCLevel));
                 }
                 //LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
 
-                int idxProcessing = 0;
+                size_t idxProcessing = 0;
                 int maxIter = 1000;
-                while (idxProcessing < rootPage.subPages.size() && maxIter > 0)
+                while (idxProcessing < rootPage.subPages.size() && --maxIter > 0)
                 {
                     const BTPage& currentPage = rootPage.subPages.at(idxProcessing);
-                    auto etype = currentPage.getEntryType();
-                    for (const Entry* entry : currentPage.rgentries)
+                    if (currentPage.hasBTEntries())
                     {
-                        if (etype == BTEntry::id())
+                        for(size_t i = 0; i < currentPage.rgentries.size(); i++)
                         {
-                            const BTEntry* btentry = static_cast<const BTEntry*>(entry);
-                            rootPage.subPages.push_back(_readBTPage(btentry->bref, rootPagePType));
+                            const Entry& entry = currentPage.rgentries.at(i);
+                            BTEntry btentry = entry.asBTEntry();
+                            // TODO: Should NOT be modifying the vector while iterating over it.
+                            // Because when the vector has to be resized the iterator will be invalidated.
+                            // I used reserve() to fix this for now.
+                            rootPage.subPages.push_back(_readBTPage(btentry.bref, rootPagePType, currentPage.cLevel));
                         }
                     }
-                    maxIter--;
                     idxProcessing++;
                 }
-                LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
+                LOG("[INFO] %s has %i subpages", 
+                    utils::PTypeToString(rootPagePType).c_str(), rootPage.subPages.size());
             }
 
-
-            NBTEntry _readNBTEntry(const std::vector<types::byte_t>& bytes)
-            {
-                /*
-                * nid (Unicode: 8 bytes; ANSI: 4 bytes):
-                *     The NID (section 2.2.2.1) of the entry. Note that the NID is a 4-byte value for both Unicode and ANSI formats.
-                *     However, to stay consistent with the size of the btkey member in BTENTRY, the 4-byte NID is extended to its 8-byte
-                *     equivalent for Unicode PST files.
-                *
-                * bidData (Unicode: 8 bytes; ANSI: 4 bytes): The BID of the data block for this node.
-                *
-                * bidSub (Unicode: 8 bytes; ANSI: 4 bytes): The BID of the subnode block for this node.
-                *     If this value is zero, a subnode block does not exist for this node.
-                *
-                * nidParent (4 bytes):
-                *     If this node represents a child of a Folder object defined in the Messaging Layer, then this value is
-                *     nonzero and contains the NID of the parent Folder object's node. Otherwise, this value is zero.
-                *     See section 2.2.2.7.7.4.1 for more information. This field is not interpreted by any structure defined at the NDB Layer.
-                *
-                * dwPadding (Unicode file format only, 4 bytes): Padding; MUST be set to zero.
-                */
-                NBTEntry entry{};
-                entry.nid = core::readNID(utils::slice(bytes, 0, 4, 4)); // NID is zero padded from 4 to 8
-                entry.bidData = core::readBID(utils::slice(bytes, 8, 16, 8));
-                entry.bidSub = core::readBID(utils::slice(bytes, 16, 24, 8));
-                entry.nidParent = core::readNID(utils::slice(bytes, 24, 28, 4));
-                entry.dwPadding = utils::slice(bytes, 28, 32, 4, utils::toT_l<int64_t>);
-                //ASSERT((entry.dwPadding == 0 || entry.dwPadding == 545), 
-                //   "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
-                return entry;
-            }
-
-            BTEntry _readBTEntry(const std::vector<types::byte_t>& bytes, types::PType pagePType)
-            {
-                /*
-                *
-                * btkey (Unicode: 8 bytes; ANSI: 4 bytes): The key value associated with this BTENTRY.
-                *   All the entries in the child BTPAGE referenced by BREF have key values greater than or equal to this key value.
-                *   The btkey is either an NID (zero extended to 8 bytes for Unicode PSTs) or a BID, depending on the ptype of the page.
-                *
-                * BREF (Unicode: 16 bytes; ANSI: 8 bytes): BREF structure (section 2.2.2.4) that points to the child BTPAGE.
-                */
-
-                ASSERT((bytes.size() == 24), "[ERROR] BTEntry must be 24 bytes not %i", bytes.size());
-
-                BTEntry entry{};
-                if (pagePType == types::PType::NBT)
-                {
-                    entry.nid = core::readNID(utils::slice(bytes, 0, 4, 4)); // NID is zero padded from 4 to 8
-                    entry.idType = BTEntry::IDType::NID;
-                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16));
-                }
-
-                else if (pagePType == types::PType::BBT)
-                {
-                    entry.bid = core::readBID(utils::slice(bytes, 0, 8, 8));
-                    entry.idType = BTEntry::IDType::BID;
-                    entry.bref = core::readBREF(utils::slice(bytes, 8, 24, 16));
-                }
-
-                else
-                {
-                    ASSERT(false, "[ERROR] Unknown Page [types::PType] %s for BTEntry", utils::PTypeToString(pagePType));
-                }
-                return entry;
-            }
-
-            BBTEntry _readBBTEntry(const std::vector<types::byte_t>& bytes)
-            {
-                /**
-                 * BREF (Unicode: 16 bytes; ANSI: 8 bytes):
-                    BREF structure (section 2.2.2.4) that contains the BID and IB of the block that the
-                    BBTENTRY references.
-
-                  cb (2 bytes): The count of bytes of the raw data contained in the block referenced by
-                    BREF excluding the block trailer and alignment padding, if any.
-
-                  cRef (2 bytes): Reference count indicating the count of references to this block. See section 2.2.2.7.7.3.1
-                    regarding how reference counts work.
-
-                  dwPadding (Unicode file format only, 4 bytes): Padding; MUST be set to zero.
-                */
-                ASSERT((bytes.size() == 24), "[ERROR] BBTEntry must be 24 bytes not %i", bytes.size());
-                BBTEntry entry{};
-                entry.bref = core::readBREF(utils::slice(bytes, 0, 16, 16));
-                entry.cb = utils::slice(bytes, 16, 18, 2, utils::toT_l<uint16_t>);
-                entry.cRef = utils::slice(bytes, 18, 20, 2, utils::toT_l<uint16_t>);
-                entry.dwPadding = utils::slice(bytes, 20, 24, 4, utils::toT_l<uint32_t>);
-
-                //ASSERT((entry.dwPadding == 0 || entry.dwPadding == 545), 
-                //    "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
-                return entry;
-            }
-
-            PageTrailer _readPageTrailer(const std::vector<types::byte_t>& pageTrailerBytes)
-            {
-                /**
-                 * ptype (1 byte): This value indicates the type of data contained within the page. This field MUST contain one of the following values.
-                 *
-                 * Value        Friendly name       Meaning                     wSig value
-                 * 0x80         ptypeBBT            Block BTree page.           Block or page signature (section 5.5).
-                 * 0x81         ptypeNBT            Node BTree page.            Block or page signature (section 5.5).
-                 * 0x82         ptypeFMap           Free Map page.              0x0000
-                 * 0x83         ptypePMap           Allocation Page Map page.   0x0000
-                 * 0x84         ptypeAMap           Allocation Map page.        0x0000
-                 * 0x85         ptypeFPMap          Free Page Map page.         0x0000
-                 * 0x86         ptypeDL             Density List page.          Block or page signature (section 5.5).
-                */
-                std::uint8_t ptypeByte = utils::slice(pageTrailerBytes, 0, 1, 1, utils::toT_l<std::uint8_t>);
-                types::PType ptype = utils::getPType(ptypeByte);
-
-                /*
-                * ptypeRepeat (1 byte): MUST be set to the same value as ptype.
-                */
-                std::uint8_t ptypeRepeatByte = utils::slice(pageTrailerBytes, 1, 2, 1, utils::toT_l<std::uint8_t>);
-                types::PType ptypeRepeat = utils::getPType(ptypeRepeatByte);
-
-                ASSERT((ptypeByte == ptypeRepeatByte), "Ptype [%i] and PtypeRepeat [%i]", ptypeByte, ptypeRepeatByte);
-
-                /*
-                * wSig (2 bytes): Page signature. This value depends on the value of the ptype field.
-                *   This value is zero (0x0000) for AMap, PMap, FMap, and FPMap pages. For BBT, NBT,
-                *   and DList pages, a page / block signature is computed (see section 5.5).
-                */
-                std::uint16_t wSig = utils::slice(pageTrailerBytes, 2, 4, 2, utils::toT_l<std::uint16_t>);
-
-                /*
-                * dwCRC (4 bytes): 32-bit CRC of the page data, excluding the page trailer.
-                *   See section 5.3 for the CRC algorithm. Note the locations of the dwCRC and
-                *   bid are differs between the Unicode and ANSI version of this structure.
-                */
-                std::uint32_t dwCRC = utils::slice(pageTrailerBytes, 4, 8, 4, utils::toT_l<std::uint32_t>);
-
-                /*
-                * bid (Unicode: 8 bytes; ANSI 4 bytes): The BID of the page's block. AMap, PMap,
-                *   FMap, and FPMap pages have a special convention where their BID is assigned the
-                *   same value as their IB (that is, the absolute file offset of the page). The bidIndex
-                *   for other page types are allocated from the special bidNextP counter in the HEADER structure.
-                */
-                core::BID bid = core::readBID(utils::slice(pageTrailerBytes, 8, 16, 8));
-
-                PageTrailer pt{};
-                pt.ptype = ptype;
-                pt.ptypeRepeat = ptypeRepeat;
-                pt.wSig = wSig;
-                pt.dwCRC = dwCRC;
-                pt.bid = bid;
-
-                //LOG("[INFO] Create Page Trailer w [ptype] %s", utils::PTypeToString(ptype).c_str());
-
-                return pt;
-            }
             BTPage _readBTPage(core::BREF btpageBref, types::PType treeType, int64_t parentCLevel = -1)
             {
                 // from the begning of the file move to .ib
                 m_file.seekg(btpageBref.ib, std::ios::beg);
-                /*
-                * Entries of the BTree array. The entries in the array depend on the value of the cLevel field.
-                *   If cLevel is greater than 0, then each entry in the array is of type BTENTRY. If cLevel is 0,
-                *   then each entry is either of type BBTENTRY or NBTENTRY, depending on the ptype of the page.
-                */
-                std::vector<types::byte_t> rgentriesBytes = utils::readBytes(m_file, 488);
-                /*
-                * cEnt (1 byte): The number of BTree entries stored in the page data.
-                *
-                * cEntMax (1 byte): The maximum number of entries that can fit inside the page data.
-                *
-                * cbEnt (1 byte): The size of each BTree entry, in bytes. Note that in some cases, cbEnt can be
-                *   greater than the corresponding size of the corresponding rgentries structure because of alignment or other
-                *   considerations. Implementations MUST use the size specified in cbEnt to advance to the next entry.
-                *
-                *   BTree Type        cLevel      rgentries structure         cbEnt (bytes)
-                *    NBT                0           NBTENTRY                ANSI: 16, Unicode: 32
-                *    NBT           Greater than 0   BTENTRY                 ANSI: 12, Unicode: 24
-                *    BBT                0           BBTENTRY                ANSI: 12, Unicode: 24
-                *    BBT           Greater than 0   BTENTRY                 ANSI: 12, Unicode: 24
-                *
-                * cLevel (1 byte): The depth level of this page. Leaf pages have a level of zero,
-                *   whereas intermediate pages have a level greater than 0. This value determines the
-                *   type of the entries in rgentries, and is interpreted as unsigned.
-                */
-                std::vector<types::byte_t> buffer = utils::readBytes(m_file, 24);
-
-                ASSERT((buffer.size() + rgentriesBytes.size() == 512), "[ERROR] BTPage must be 512 bytes in size");
-
-                auto cEnt = utils::slice(buffer, 0, 1, 1, utils::toT_l<decltype(BTPage::cbEnt)>);
-                auto cEntMax = utils::slice(buffer, 1, 2, 1, utils::toT_l<decltype(BTPage::cEntMax)>);
-                auto cbEnt = utils::slice(buffer, 2, 3, 1, utils::toT_l<decltype(BTPage::cbEnt)>);
-                auto cLevel = utils::slice(buffer, 3, 4, 1, utils::toT_l<decltype(BTPage::cLevel)>);
-
-                /*
-                * dwPadding (Unicode: 4 bytes): Padding; MUST be set to zero. Note there is no padding in the ANSI version of this structure.
-                */
-                auto dwPadding = utils::slice(buffer, 4, 8, 4, utils::toT_l<decltype(BTPage::dwPadding)>);
-
-                //LOG("%i %i", cbEnt, cLevel);
-
-                if (parentCLevel != -1)
-                {
-                    ASSERT((parentCLevel > cLevel), "[ERROR] SubBTPage cLevel [%i] must be smaller than ParentBTPage cLevel [%i]", cLevel, parentCLevel);
-                }
-
-                /**
-                    * pageTrailer (Unicode: 16 bytes; ANSI: 12 bytes): A PAGETRAILER structure (section 2.2.2.7.1). The ptype
-                    *  subfield of pageTrailer MUST be set to ptypeBBT for a Block BTree page, or ptypeNBT for a Node BTree page.
-                    *  The other subfields of pageTrailer MUST be set as specified in section 2.2.2.7.1.
-                */
-                PageTrailer pageTrailer = _readPageTrailer(utils::slice(buffer, 8, 24, 16));
-
-                ASSERT((pageTrailer.ptype == types::PType::BBT || pageTrailer.ptype == types::PType::NBT), "[ERROR] Invalid ptype for pagetrailer");
-                ASSERT((pageTrailer.ptype == treeType), "[ERROR] Pagetrailer types::PType and given Tree types::PType do not match");
-                ASSERT((cEnt <= cEntMax), "[ERROR] Invalid cEnt %i", cEnt);
-                ASSERT((dwPadding == 0), "[ERROR] dwPadding should be 0 not %i", dwPadding);
-
-                BTPage page{};
-                page.cEnt = cEnt;
-                page.cbEnt = cbEnt;
-                page.cEntMax = cEntMax;
-                page.cLevel = cLevel;
-                page.dwPadding = dwPadding;
-                page.pageTrailer = pageTrailer;
-                page.rgentries = _readEntries(rgentriesBytes, pageTrailer.ptype, cEnt, cbEnt, cLevel);
-                return page;
-            }
-
-            std::vector<Entry*> _readEntries(
-                const std::vector<types::byte_t>& entriesInBytes,
-                types::PType pageType,
-                int64_t numEntries,
-                int64_t singleEntrySize,
-                int64_t cLevel
-            )
-            {
-                std::vector<Entry*> entries{};
-                for (int64_t i = 0; i < numEntries; i++)
-                {
-                    int64_t start = i * singleEntrySize;
-                    int64_t end = (i + 1) * singleEntrySize;
-                    int64_t size = end - start;
-                    ASSERT((size == singleEntrySize), 
-                        "[ERROR] Size should be %i NOT %i", singleEntrySize, size);
-                    std::vector<types::byte_t> entryBytes = utils::slice(entriesInBytes, start, end, size);
-
-                    /**
-                    * Entries of the BTree array. The entries in the array depend on the value of the cLevel field.
-                    *   If cLevel is greater than 0, then each entry in the array is of type BTENTRY. If cLevel is 0,
-                    *   then each entry is either of type BBTENTRY or NBTENTRY, depending on the ptype of the page.
-                    */
-                    auto entryID = BTPage::getEntryType(pageType, cLevel);
-                    if (entryID == NBTEntry::id()) // entries are NBTENTRY 
-                    {
-                        ASSERT((cLevel == 0), "[ERROR] Leaf pages should have a cLevel of 0 not %i", cLevel);
-                        NBTEntry* entry = new NBTEntry(_readNBTEntry(entryBytes));
-                        entries.push_back(static_cast<Entry*>(entry));
-                    }
-
-                    else if (entryID == BTEntry::id()) // entries are BTENTRY 
-                    {
-                        BTEntry* entry = new BTEntry(_readBTEntry(entryBytes, pageType));
-                        entries.push_back(static_cast<Entry*>(entry));
-                    }
-
-                    else if (entryID == BBTEntry::id()) // BBTENTRY (Leaf BBT Entry) 
-                    {
-                        ASSERT((cLevel == 0), "[ERROR] Leaf pages should have a cLevel of 0 not %i", cLevel);
-                        BBTEntry* entry = new BBTEntry(_readBBTEntry(entryBytes));
-                        entries.push_back(static_cast<Entry*>(entry));
-                    }
-
-                    else
-                    {
-                        ASSERT(false, 
-                            "[ERROR] Invalid [cLevel] %i and [treePType] %i combination at iteration %i", 
-                            cLevel, 
-                            utils::PTypeToString(pageType), 
-                            i);
-                    }
-                }
-                ASSERT((entries.size() == numEntries), "[ERROR] Invalid number of entries %i", entries.size());
-                return entries;
+                return BTPage::readBTPage(utils::readBytes(m_file, 512), treeType, parentCLevel, &btpageBref);
             }
 
             BlockTrailer _readBlockTrailer(const std::vector<types::byte_t>& bytes)

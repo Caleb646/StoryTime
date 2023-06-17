@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <type_traits>
 
 #include "types.h"
 #include "utils.h"
@@ -39,41 +40,101 @@ namespace reader {
              *  based on the bidNextB value in the HEADER structure (see section 2.2.2.6). The bidIndex
              *  increments by one each time a new BID is assigned.
             */
-            std::uint64_t bidIndex{};
         public:
+            BID() = default;
+            BID(const std::vector<types::byte_t>& bytes)
+                : m_bid(utils::toT_l<decltype(m_bid)>(bytes)) 
+            {
+			    _init();
+            }
+
             bool isInternal() const
             {
-                return (bidIndex & 0x02) > 0;
+                ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+                return (m_bid & 0x02) > 0;
+            }
+
+            uint64_t getBidIndex() const
+			{
+                ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+				return (m_bid >> 2) << 2;
+                //return m_bid;
+			}
+
+            uint64_t getBidRaw() const
+            {
+                ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+                return m_bid;
             }
 
             bool operator==(const BID& other) const
 			{
-				return bidIndex == other.bidIndex && isInternal() == other.isInternal();
+                ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+                //return getBidIndex() == other.getBidIndex();
+                return getBidRaw() == other.getBidRaw();
 			}
+        private:
+            void _init()
+            {
+                m_isSetup = true;
+            }
+        private:
+            uint64_t m_bid{};
+            bool m_isSetup{ false };
         };
 
         class NID
         {
         public:
+            NID() = default;
+            NID(uint32_t _nid) : m_nid(_nid) {}
+            NID(const std::vector<types::byte_t>& bytes) 
+                : m_nid(utils::toT_l<decltype(m_nid)>(bytes)) {}
+
+            bool operator==(const NID& other) const
+			{
+				return getNIDRaw() == other.getNIDRaw();
+			}
+
             /*
-            * nidType (5 bits): Identifies the type of the node represented by the NID.
+            * @brief = nidType (5 bits): Identifies the type of the node represented by the NID.
             *   The following table specifies a list of values for nidType. However, it
             *   is worth noting that nidType has no meaning to the structures defined in the NDB Layer.
             */
-            //int64_t nidType{};
+            types::NIDType getNIDType() const 
+            { 
+                return utils::getNIDType(m_nid & 0x1F);
+            }
 
-            /*
-            * nidIndex (27 bits): The identification portion of the NID.
-            */
-            uint32_t nidIndex{};
-        public:
-            bool operator==(const NID& other) const
-			{
-				return getNIDType() == other.getNIDType() && nidIndex == other.nidIndex;
-			}
+            uint32_t getNIDIndex() const 
+            { 
+                static_assert(std::is_same_v<decltype(m_nid), uint32_t> == true);
+                return (m_nid >> 5) << 5;
+            }
 
-            types::NIDType getNIDType() const { return utils::getNIDType(nidIndex & 0x1F); }
+            uint32_t getNIDRaw() const
+            {
+                return m_nid;
+            }
+        private:
+            /// nid is represented by both: nidIndex and nidType
+            /// nidIndex (27 bits): The identification portion of the NID.
+            /// nidType (5 bits): Identifies the type of the node represented by the NID.
+            uint32_t m_nid{};
         };
+
+        /*
+        * 
+        * 
+        * Special NID Values
+        * 
+        */
+        NID NID_MESSAGE_STORE(0x21);
+        NID NID_NAME_TO_ID_MAP(0x61);
+        NID NID_NORMAL_FOLDER_TEMPLATE(0xA1);
+        NID NID_SEARCH_FOLDER_TEMPLATE(0xC1);
+        NID NID_ROOT_FOLDER(0x122);
+        NID NID_SEARCH_MANAGEMENT_QUEUE(0x1E1);
 
         // The BREF is a record that maps a BID to its absolute file offset location. 
         struct BREF
@@ -101,9 +162,7 @@ namespace reader {
             * Block BIDs (section 2.2.2.8) reserve the two least significant bits for flags (see below). As
                 a result these increment by 4 each time a new one is assigned.
             */
-            core::BID bid{};
-            bid.bidIndex = utils::toT_l<uint64_t>(bytes);
-            return bid;
+            return BID(bytes);
         }
 
         core::NID readNID(const std::vector<types::byte_t>& bytes)
@@ -117,9 +176,7 @@ namespace reader {
             */
 
             ASSERT((bytes.size() == 4), "[ERROR] NID must be 4 bytes not %i", bytes.size());
-            core::NID nid{};
-            nid.nidIndex = utils::toT_l<uint32_t>(bytes);
-            return nid;
+            return NID(bytes);
         }
 
         core::BREF readBREF(const std::vector<types::byte_t>& bytes, std::string name = "NOT SET")

@@ -1,5 +1,4 @@
-# version 3.11 or later of CMake needed later for installing GoogleTest
-# so let's require it now.
+
 cmake_minimum_required(VERSION 3.11)
 
 project(pst_reader VERSION 0.1.0)
@@ -8,14 +7,17 @@ include(CTest)
 enable_testing()
 
 set (CMAKE_CXX_STANDARD 20)
-set (SRC_FILES "src/main.cpp") # your source files
+set (SRC_FILES "src/main.cpp")
 
 
-add_executable(pst_reader ${SRC_FILES}) # build executable "sample"
+add_executable(pst_reader ${SRC_FILES} "src/main.cpp")
+
+#set (SRC_FILES "test.cpp")
+add_executable(tests "src/test.cpp")
 
 
 
-target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include) # include directory for header files
+target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

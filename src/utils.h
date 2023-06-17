@@ -12,6 +12,14 @@
 
 
 #define LOG(fmt, ...) reader::utils::log(__LINE__, fmt, __VA_ARGS__)
+
+#define LOGIF(con, fmt, ...) do {\
+								if(con)\
+									LOG(fmt, __VA_ARGS__);\
+							}\
+						    while(false);\
+
+
 #define ASSERT(con, fmt, ...) do {\
                                 if(!con)\
                                     LOG(fmt, __VA_ARGS__);\
@@ -67,10 +75,11 @@ namespace reader {
             printf(" at line [%i]\n", lineNumber);
         }
 
-
-        types::PType getPType(uint8_t ptype)
+        template<typename T>
+        types::PType getPType(T ptype)
         {
-            switch (ptype)
+            static_assert(sizeof(T) == sizeof(uint8_t));
+            switch (static_cast<uint8_t>(ptype))
             {
             case 0x80:
                 return types::PType::BBT;
@@ -992,7 +1001,13 @@ namespace reader {
                 }
             }
 
-        } // namespace crc32
+            WORD ComputeSig(uint64_t ib, uint64_t bid)
+            {
+                ib ^= bid;
+                return(WORD(WORD(ib >> 16) ^ WORD(ib)));
+            }
+
+        } // namespace ms
 	}
 }
 
