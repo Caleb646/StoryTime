@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <type_traits>
+#include <utility>
 
 #include "types.h"
 #include "utils.h"
@@ -195,6 +197,7 @@ namespace reader {
 			}
 
             size_t size() const { return m_data.size(); }
+
         private:
             std::vector<types::byte_t> m_data{};
         };
@@ -286,6 +289,19 @@ namespace reader {
             {
                 return getEntryType() == BBTEntry::id() || getEntryType() == NBTEntry::id();
             }
+
+            template<typename EntryType>
+            bool has() const
+            {
+                if constexpr (EntryType::id() == BTEntry::id())
+                    return hasBTEntries();
+                else if constexpr (EntryType::id() == BBTEntry::id())
+                    return hasBBTEntries();
+                else if constexpr (EntryType::id() == NBTEntry::id())
+                    return hasNBTEntries();
+				ASSERT(false, "[ERROR] Invalid EntryType");
+                return false;
+			}
 
             bool verify() const
             {
@@ -412,7 +428,7 @@ namespace reader {
                 return entries;
             }
 
-            static PageTrailer readPageTrailer(const std::vector<types::byte_t>& pageTrailerBytes, core::BREF* bref = nullptr)
+            static PageTrailer readPageTrailer(const std::vector<types::byte_t>& pageTrailerBytes, const core::BREF* const bref = nullptr)
             {
                 /**
                  * ptype (1 byte): This value indicates the type of data contained within the page. This field MUST contain one of the following values.
@@ -579,6 +595,164 @@ namespace reader {
 			}
         };
 
+        template<typename LeafEntryType>
+        class BTree
+        {
+        public:
+            BTree(BTPage rootPage)
+            {
+                addSubPage(rootPage);
+                _init();
+            }
+            const BTPage& rootPage() const
+            {
+			    return m_pages.at(0);
+		    }
+
+            types::PType ptype() const
+            {
+				return rootPage().pageTrailer.ptype;
+			}
+
+            int64_t cLevel() const
+            {
+                return rootPage().cLevel;
+            }
+            size_t size() const
+            {
+                return m_pages.size();
+            }
+
+            const BTPage& at(size_t index) const
+            {
+				return m_pages.at(index);
+			}
+
+            auto begin() const
+            {
+                return m_pages.begin();
+            }
+
+            auto end() const
+            {
+                return m_pages.end();
+            }
+
+            bool addSubPage(BTPage page)
+            {
+				m_pages.push_back(page);
+				return true;
+			}
+
+            template<typename NIDorBID>
+            LeafEntryType get(NIDorBID id)
+            {
+                //if constexpr (std::is_same_v<NIDorBID, core::NID>)
+                //    static_assert(std::is_same_v<LeafEntryType, NBTEntry>, "NID can only be used with Node BTree");
+                //else
+                //    static_assert(std::is_same_v<LeafEntryType, BBTEntry>, "BID can only be used with Block BTree");
+
+                for (size_t i = 0; i < m_pages.size(); i++)
+                {
+                    const BTPage& page = m_pages.at(i);
+                    if (page.has<LeafEntryType>())
+                    {
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
+                        {
+                            LeafEntryType entry = page.rgentries.at(j).as<LeafEntryType>();
+                            if constexpr (LeafEntryType::id() == BBTEntry::id())
+                            {
+                                if (entry.bref.bid == id)
+                                {
+                                    return entry;
+                                }
+							}
+							else
+							{
+                                if (entry.nid == id)
+                                {
+								    return entry;
+                                }
+                            }
+                        }
+                    }
+                }
+                return LeafEntryType{};
+            }
+
+            template<typename NIDorBID>
+            uint32_t count(NIDorBID id)
+            {
+                bool t = std::is_same_v<NIDorBID, core::NID>;
+                //if constexpr (std::is_same_v<NIDorBID, core::NID> == true)
+                //    static_assert(std::is_same_v<LeafEntryType, NBTEntry> == true, "NID can only be used with Node BTree");
+                //else if constexpr (std::is_same_v<NIDorBID, core::BID> == true)
+                //    static_assert(std::is_same_v<LeafEntryType, BBTEntry> == true, "BID can only be used with Block BTree");
+                //else
+                //    static_assert(false, "Invalid ID type");
+
+                uint32_t count{ 0 };
+                for (size_t i = 0; i < m_pages.size(); i++)
+                {
+                    const BTPage& page = m_pages.at(i);
+                    if (page.has<LeafEntryType>())
+                    {
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
+                        {
+                            LeafEntryType entry = page.rgentries.at(j).as<LeafEntryType>();
+                            if constexpr (LeafEntryType::id() == BBTEntry::id())
+                            {
+                                if (entry.bref.bid == id)
+                                {
+                                    count++;
+                                }
+                            }
+                            else
+                            {
+                                if (entry.nid == id)
+                                {
+                                    count++;
+                                }
+                            }
+                        }
+                    }
+                }
+                return count;
+            }
+
+            bool verify()
+            {
+                for (size_t i = 0; i < m_pages.size(); i++)
+                {
+                    const BTPage& page = m_pages.at(i);
+                    page.verify();
+                }
+                return true;
+            }
+
+
+        private:
+            void _init()
+            {
+                static_assert((std::is_same_v<LeafEntryType, BBTEntry>
+                        || std::is_same_v<LeafEntryType, NBTEntry>, "Invalid LeafEntryType. Must be BBTEntry or NBTEntry."));
+
+                m_pages.reserve(20000);
+                //ASSERT((rootPage().hasBTEntries() == true), "[ERROR] Root BTPage must have BTEntries");
+                if constexpr (std::is_same_v<LeafEntryType, NBTEntry>)
+                {
+                    ASSERT((rootPage().pageTrailer.ptype == types::PType::NBT), "[ERROR] Root BTPage with NBTEntries must be NBT");
+                }   
+                else
+                {
+                    ASSERT((rootPage().pageTrailer.ptype == types::PType::BBT), "[ERROR] Root BTPage with BBTEntries must be BBT");
+                }
+                   
+            }
+        private:
+            std::vector<BTPage> m_pages{};
+        };
+
         class NDB
         {
         public:
@@ -588,138 +762,64 @@ namespace reader {
                 :
                 m_file(file),
                 m_header(header),
-                m_rootNBT(_readBTPage(m_header.root.nodeBTreeRootPage, types::PType::NBT)),
-                m_rootBBT(_readBTPage(m_header.root.blockBTreeRootPage, types::PType::BBT))
+                m_rootNBT(BTree<NBTEntry>(_readBTPage(m_header.root.nodeBTreeRootPage, types::PType::NBT))),
+                m_rootBBT(BTree<BBTEntry>(_readBTPage(m_header.root.blockBTreeRootPage, types::PType::BBT)))
             {
                 _init();
             }
 
+            template<typename NIDorBID>
+            auto get(NIDorBID id)
+            {
+                if constexpr(NIDorBID::id() == core::NID::id())
+					return m_rootNBT.get(id);
+                else
+                {
+                    static_assert( (NIDorBID::id() == core::BID::id()), "[ERROR] Invalid ID Type");
+                    return m_rootBBT.get(id);
+                }
+			}
+
             bool verify()
             {
-                m_rootNBT.verify();
-                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
-                {
-                    const BTPage& page = m_rootNBT.subPages.at(i);
-                    page.verify();
-      //              if (page.hasNBTEntries())
-      //              {
-      //                  for(size_t j = 0; j < page.rgentries.size(); j++)
-						//{
-      //                      const Entry& entry = page.rgentries.at(j);
-						//	const NBTEntry b = entry.asNBTEntry();
-      //                      int matches = countBID(b.bidData);
-						//	//ASSERT((matches == 1), "[ERROR] BID %i != 1", matches);
-      //                      //LOGIF((b.bidData.getBidRaw() == 0), "%i %i %i", i, j, matches);
-						//}
-      //              }
-                }
-
                 m_rootBBT.verify();
-                for (size_t i = 0; i < m_rootBBT.subPages.size(); i++)
-                {
-                    const BTPage& page = m_rootBBT.subPages.at(i);
-                    page.verify();
-                }
+                m_rootNBT.verify();
 
-                ASSERT((countNID(core::NID_MESSAGE_STORE) == 1),
+                for (size_t i = 0; i < m_rootNBT.size(); i++)
+                {
+                    const BTPage& page = m_rootNBT.at(i);
+                    page.verify();
+
+                    //if (page.hasNBTEntries())
+                    //{
+                    //    for (size_t j = 0; j < page.rgentries.size(); j++)
+                    //    {
+                    //        const NBTEntry& b = page.rgentries.at(j).asNBTEntry();
+                    //        int matches = m_rootBBT.count(b.bidData);
+                    //        //ASSERT((matches == 1), "[ERROR] BID %i != 1", matches);
+                    //        LOGIF((matches == 0), "page: %i entry: %i matches: %i", i, j, matches);
+                    //    }
+                    //}
+                }
+                    
+                ASSERT((m_rootNBT.count(core::NID_MESSAGE_STORE) == 1),
                     "[ERROR] Cannot be more than 1 Message Store");
-                ASSERT((countNID(core::NID_NAME_TO_ID_MAP) == 1),
+                ASSERT((m_rootNBT.count(core::NID_NAME_TO_ID_MAP) == 1),
                     "[ERROR]");
-                ASSERT((countNID(core::NID_NORMAL_FOLDER_TEMPLATE) <= 1),
+                ASSERT((m_rootNBT.count(core::NID_NORMAL_FOLDER_TEMPLATE) <= 1),
                     "[ERROR]");
-                ASSERT((countNID(core::NID_SEARCH_FOLDER_TEMPLATE) <= 1),
+                ASSERT((m_rootNBT.count(core::NID_SEARCH_FOLDER_TEMPLATE) <= 1),
                     "[ERROR]");
-                ASSERT((countNID(core::NID_ROOT_FOLDER) == 1),
+                ASSERT((m_rootNBT.count(core::NID_ROOT_FOLDER) == 1),
                     "[ERROR]");
-                ASSERT((countNID(core::NID_SEARCH_MANAGEMENT_QUEUE) <= 1),
+                ASSERT((m_rootNBT.count(core::NID_SEARCH_MANAGEMENT_QUEUE) <= 1),
                     "[ERROR]");
+                LOG("Found only 1 Message Store and Root Folder");
 
                 return true;
             }
 
-            BBTEntry getBID(core::BID bid)
-            {
-                for(size_t i = 0; i < m_rootBBT.subPages.size(); i++)
-				{
-					const BTPage& page = m_rootBBT.subPages.at(i);
-					if (page.hasBBTEntries())
-					{
-						for(size_t j = 0; j < page.rgentries.size(); j++)
-						{
-                            BBTEntry entry = page.rgentries.at(j).as<BBTEntry>();
-							if (entry.bref.bid == bid)
-							{
-								return entry;
-							}
-						}
-					}
-				}
-				ASSERT(false, "[ERROR] unable to find BID [%i] in BBTree", bid.getBidIndex());
-				return BBTEntry{};
-            }
 
-            NBTEntry getNID(core::NID nid)
-            {
-                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
-                {
-                    const BTPage& page = m_rootNBT.subPages.at(i);
-                    if (page.hasNBTEntries())
-                    {
-                        for (size_t j = 0; j < page.rgentries.size(); j++)
-                        {
-                            NBTEntry entry = page.rgentries.at(j).as<NBTEntry>();
-                            if (entry.nid == nid)
-                            {
-                                return entry;
-                            }
-                        }
-                    }
-                }
-                ASSERT(false, "[ERROR] unable to find NID [%i] in NBTree", nid.getNIDRaw());
-                return NBTEntry{};
-            }
-
-            uint32_t countNID(core::NID nid)
-            {
-                uint32_t count{ 0 };
-                for (size_t i = 0; i < m_rootNBT.subPages.size(); i++)
-                {
-                    const BTPage& page = m_rootNBT.subPages.at(i);
-                    if (page.hasNBTEntries())
-                    {
-                        for (size_t j = 0; j < page.rgentries.size(); j++)
-                        {
-                            NBTEntry entry = page.rgentries.at(j).as<NBTEntry>();
-                            if (entry.nid == nid)
-                            {
-                                count++;
-                            }
-                        }
-                    }
-                }
-                return count;
-            }
-
-            uint32_t countBID(core::BID bid)
-            {
-                uint32_t count{ 0 };
-                for (size_t i = 0; i < m_rootBBT.subPages.size(); i++)
-                {
-                    const BTPage& page = m_rootBBT.subPages.at(i);
-                    if (page.hasBBTEntries())
-                    {
-                        for (size_t j = 0; j < page.rgentries.size(); j++)
-                        {
-                            BBTEntry entry = page.rgentries.at(j).as<BBTEntry>();
-                            if (entry.bref.bid == bid)
-                            {
-                                count++;
-                            }
-                        }
-                    }
-                }
-                return count;
-            }
 
             /**
              * @brief This function only deals with Data Blocks (i.e Data, XBlock, or XXBlock). Not with subnodes
@@ -779,18 +879,27 @@ namespace reader {
                         blockBytes.size() - blockTrailerSize, 
                         blockBytes.size(),
                         (size_t)blockTrailerSize
-                    )
+                    ),
+                    &blockBref
                 );
+
+                ASSERT((trailer.bid == blockBref.bid), "[ERROR] Bids should match");
 
                 ASSERT( (blockSize - (blockTrailerSize + offset) == trailer.cb), 
                     "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
+
+                ASSERT( (sizeofBlockData == trailer.cb),
+                    "[ERROR] Given sizeofBlockData [%i] != Trailer BlockSize [%i]", sizeofBlockData, trailer.cb);
+
+                //int32_t temp = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
+                //core::NID t(utils::slice(blockBytes, 0, 4, 4));
 
                 if (!trailer.bid.isInternal()) // Data Block
                 {
                     return DataTree(_readDataBlock(blockBytes, trailer, blockSize));
                 }
 
-                else if (trailer.bid.isInternal()) // XBlock or XXBlock
+                else // XBlock or XXBlock
                 {
                     int32_t btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
                     if (btype == 0x01) // XBlock
@@ -817,51 +926,39 @@ namespace reader {
             {
                 _buildBTree(m_rootNBT);
                 _buildBTree(m_rootBBT);
-
                 verify();
             }
 
-            void _buildBTree(BTPage& rootPage)
+            template<typename LeafEntryType>
+            void _buildBTree(BTree<LeafEntryType>& btree)
             {
-                rootPage.subPages.reserve(500);
-
-                types::PType rootPagePType = rootPage.pageTrailer.ptype;
-                int64_t rootPageCLevel = rootPage.cLevel;
-
-                ASSERT((rootPage.hasBTEntries() == true), 
-                    "[ERROR] Root BTPage must contain BTEntries");
-                ASSERT(( rootPagePType == types::PType::NBT || rootPagePType == types::PType::BBT), 
-                    "[ERROR] Root BTPage must be either NBT or BBT");
-
-                for(size_t i = 0; i < rootPage.rgentries.size(); i++)
-                {
-                    const Entry& entry = rootPage.rgentries.at(i);
-                    BTEntry btentry = entry.asBTEntry();
-                    rootPage.subPages.push_back(_readBTPage(btentry.bref, rootPagePType, rootPageCLevel));
-                }
-                //LOG("[INFO] BTPage has %i subpages", rootPage.subPages.size());
+                types::PType rootPagePType = btree.ptype();
+                int64_t rootPageCLevel = btree.cLevel();
 
                 size_t idxProcessing = 0;
                 int maxIter = 1000;
-                while (idxProcessing < rootPage.subPages.size() && --maxIter > 0)
+                while (idxProcessing < btree.size() && --maxIter > 0)
                 {
-                    const BTPage& currentPage = rootPage.subPages.at(idxProcessing);
+                    const BTPage& currentPage = btree.at(idxProcessing);
+                    if (idxProcessing >= 625)
+                    {
+                        int temp = 0;
+                    }
                     if (currentPage.hasBTEntries())
                     {
                         for(size_t i = 0; i < currentPage.rgentries.size(); i++)
                         {
-                            const Entry& entry = currentPage.rgentries.at(i);
-                            BTEntry btentry = entry.asBTEntry();
+                            const BTEntry& btentry = currentPage.rgentries.at(i).asBTEntry();
                             // TODO: Should NOT be modifying the vector while iterating over it.
                             // Because when the vector has to be resized the iterator will be invalidated.
                             // I used reserve() to fix this for now.
-                            rootPage.subPages.push_back(_readBTPage(btentry.bref, rootPagePType, currentPage.cLevel));
+                            btree.addSubPage(_readBTPage(btentry.bref, rootPagePType, currentPage.cLevel));
                         }
                     }
                     idxProcessing++;
                 }
                 LOG("[INFO] %s has %i subpages", 
-                    utils::PTypeToString(rootPagePType).c_str(), rootPage.subPages.size());
+                    utils::PTypeToString(rootPagePType).c_str(), btree.size());
             }
 
             BTPage _readBTPage(core::BREF btpageBref, types::PType treeType, int64_t parentCLevel = -1)
@@ -871,7 +968,7 @@ namespace reader {
                 return BTPage::readBTPage(utils::readBytes(m_file, 512), treeType, parentCLevel, &btpageBref);
             }
 
-            BlockTrailer _readBlockTrailer(const std::vector<types::byte_t>& bytes)
+            BlockTrailer _readBlockTrailer(const std::vector<types::byte_t>& bytes, const core::BREF* const bref = nullptr)
             {
                 ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
 
@@ -894,18 +991,37 @@ namespace reader {
                 trailer.wSig = utils::slice(bytes, 2, 4, 2, utils::toT_l<int64_t>);
                 trailer.dwCRC = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
                 trailer.bid = core::readBID(utils::slice(bytes, 8, 16, 8));
+
+                if (bref != nullptr)
+                {
+                    auto computedSig = utils::ms::ComputeSig(bref->ib, bref->bid.getBidRaw());
+                    ASSERT(std::cmp_equal(trailer.wSig, computedSig), "[ERROR] Page Sig [%i] != Computed Sig [%i]", trailer.wSig, computedSig);
+                }
+
                 return trailer;
             }
 
             DataBlock _readDataBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize)
             {
                 ASSERT((blockBytes.size() == blockSize), "[ERROR] blockBytes.size() != blockSize");
-                std::vector<types::byte_t> data = utils::slice(blockBytes, (int64_t)0, trailer.cb, trailer.cb);
+                std::vector<types::byte_t> data = utils::slice(blockBytes, 0ll, trailer.cb, trailer.cb);
+                ASSERT((data.size() == trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
+
+                size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
+                ASSERT((trailer.dwCRC == dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
+
                 // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
                 utils::ms::CryptPermute(
                     data.data(), 
                     static_cast<int>(data.size()), 
-                    utils::ms::DATA_IS_ENCRYPTED);
+                    utils::ms::DECODE_DATA
+                );
+
+                //utils::ms::CryptCyclic(
+                //    data.data(), 
+                //    static_cast<int>(data.size()), 
+                //    static_cast<utils::ms::DWORD>(trailer.bid.getBidRaw())
+                //);
 
                 DataBlock block{};
                 block.data = std::move(data);
@@ -967,8 +1083,8 @@ namespace reader {
         private:
             std::ifstream& m_file;
             core::Header m_header{};
-            BTPage m_rootNBT{};
-            BTPage m_rootBBT{};
+            BTree<NBTEntry> m_rootNBT;
+            BTree<BBTEntry> m_rootBBT;
         };
 
 	}

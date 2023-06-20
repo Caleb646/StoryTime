@@ -475,8 +475,8 @@ namespace reader {
             typedef unsigned long long ULONG_PTR;
             typedef ULONG_PTR DWORD_PTR;
 
-            BOOL DATA_IS_ENCRYPTED = 1;
-            BOOL DATA_ISNOT_ENCRYPTED = 0;
+            BOOL DECODE_DATA = 0;
+            BOOL ENCODE_DATA = 1;
 
             const DWORD CrcTableOffset32[256] =
             {

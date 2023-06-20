@@ -54,7 +54,7 @@ namespace reader
             * ibFileEof (Unicode: 8 bytes; ANSI 4 bytes): The size of the PST file, in bytes. 
             */
             std::uint64_t ibFileEof = utils::slice(bytes, 4, 12, 8, utils::toT_l<std::uint64_t>);
-            LOG("[INFO] [file size in bytes] %i", ibFileEof);
+            LOG("[INFO] [file size in bytes] %u", ibFileEof);
 
             /*
             * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3) 
@@ -291,7 +291,7 @@ namespace reader
            */
            uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
            ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "[ERROR] Invalid Encryption");
-           //LOG("[bCryptMethod] %s", utils::toHexString(bCryptMethod).c_str());
+           LOG("[bCryptMethod] %s", utils::toHex(bCryptMethod).c_str());
             
            /*
            * rgbReserved (2 bytes): Reserved; MUST be set to zero.

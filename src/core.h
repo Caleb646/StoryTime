@@ -42,6 +42,10 @@ namespace reader {
             */
         public:
             BID() = default;
+            BID(uint64_t _bid) : m_bid(_bid)
+            {
+				_init();
+			}
             BID(const std::vector<types::byte_t>& bytes)
                 : m_bid(utils::toT_l<decltype(m_bid)>(bytes)) 
             {
@@ -70,9 +74,15 @@ namespace reader {
             bool operator==(const BID& other) const
 			{
                 ASSERT((m_isSetup == true), "[ERROR] BID not setup");
-                //return getBidIndex() == other.getBidIndex();
-                return getBidRaw() == other.getBidRaw();
+                return getBidIndex() == other.getBidIndex();
+                //return getBidRaw() == other.getBidRaw();
 			}
+
+            static constexpr size_t id()
+            {
+                return 4;
+            }
+
         private:
             void _init()
             {
@@ -94,6 +104,12 @@ namespace reader {
             bool operator==(const NID& other) const
 			{
 				return getNIDRaw() == other.getNIDRaw();
+                //return getNIDIndex() == other.getNIDIndex();
+			}
+
+            static constexpr size_t id()
+            {
+				return 5;
 			}
 
             /*

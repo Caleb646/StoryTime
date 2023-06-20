@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <utility>
 
 #include "types.h"
 #include "utils.h"
@@ -434,8 +435,9 @@ namespace reader {
 			void _init()
 			{
 
-				auto nbtentry = m_ndb.getNID(core::NID_MESSAGE_STORE);
-				auto bbtentry = m_ndb.getBID(nbtentry.bidData);
+				//ndb::NBTEntry nbtentry = m_ndb.get(core::NID_ROOT_FOLDER);
+				ndb::NBTEntry nbtentry = m_ndb.get(core::NID_MESSAGE_STORE);
+				ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
 				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
 				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
 				_readHN(dataTree);
@@ -446,6 +448,7 @@ namespace reader {
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
 
 				HNHDR hnHdr = LTP::readHNHDR(tree.dataBlocks.at(0).data, 0, tree.dataBlocks.size());
+				HNPageMap pMap = _readHNPageMap(tree.dataBlocks.at(0).data, hnHdr.ibHnpm + 12);
 				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
 				{
 					const ndb::DataBlock& block = tree.dataBlocks.at(i);
@@ -457,15 +460,15 @@ namespace reader {
 				LOG("[INFO] Data Block Size: %i", bytes.size());
 				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
 				HNHDR hnhdr{};
-				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<decltype(hnhdr.ibHnpm)>);
-				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<decltype(hnhdr.bSig)>);
-				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<decltype(hnhdr.bClientSig)>);
-				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<decltype(hnhdr.hidUserRoot)>);
+				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
+				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<uint32_t>);
+				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<uint32_t>);
+				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
 				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
 
 				uint32_t hidType = hnhdr.hidUserRoot & 0x1F;
 				ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType)
-				ASSERT((hnhdr.bSig == static_cast<decltype(hnhdr.bSig)>(0xEC) ), "[ERROR] Invalid HN signature");
+				ASSERT(std::cmp_equal(hnhdr.bSig, 0xEC), "[ERROR] Invalid HN signature");
 				ASSERT( (utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES) ), "[ERROR] Invalid BType");
 				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");
 
@@ -482,10 +485,13 @@ namespace reader {
 				return hnhdr;
 			}
 
-			HNPageMap _readHNPageMap(const std::vector<types::byte_t>& bytes, int64_t startPosOfHNPageMap)
+			HNPageMap _readHNPageMap(const std::vector<types::byte_t>& bytes, int64_t start)
 			{
 				HNPageMap pg{};
-				pg.cAlloc = utils::slice(bytes, startPosOfHNPageMap, startPosOfHNPageMap + (int64_t)2, (int64_t)2, utils::toT_l<decltype(pg.cAlloc)>);
+				pg.cAlloc = utils::slice(bytes, start, start + 2ll, 2ll, utils::toT_l<decltype(pg.cAlloc)>);
+				pg.cFree = utils::slice(bytes, start + 2ll, start + 4ll, 2ll, utils::toT_l<decltype(pg.cFree)>);
+
+				return pg;
 			}
 
 		private:
