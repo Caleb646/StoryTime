@@ -246,10 +246,10 @@ int main()
 		}
 	}
 
-	HNHDR hnhdr = LTP::readHNHDR(sample_HN, 0, 1);
+	HNHDR hnhdr = HN::readHNHDR(sample_HN, 0, 1);
 	ASSERT((hnhdr.bSig == 0xEC), "[ERROR]");
 	ASSERT((hnhdr.bClientSig == 0xBC), "[ERROR]");
-	ASSERT((hnhdr.hidUserRoot == 0x00000020), "[ERROR]");
+	ASSERT((hnhdr.hidUserRoot.getHIDRaw() == 0x00000020), "[ERROR]");
 	ASSERT((hnhdr.ibHnpm == 0x00EC), "[ERROR]");
 
 	std::vector<types::byte_t> A(sample_HN);

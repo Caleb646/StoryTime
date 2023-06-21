@@ -20,14 +20,46 @@ namespace reader {
 		 * @brief = An HID is a 4-byte value that identifies an item allocated from the heap. 
 		 * The value is unique only within the heap itself. The following is the structure of an HID. 
 		*/
-		struct HID
+		class HID
 		{
-			/// (5 bits) MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.
-			int16_t hidType{};
-			/// (11 bits) This is the 1-based index value that identifies an item allocated from the heap node. This value MUST NOT be zero.
-			int32_t hidIndex{};
-			/// (16 bits) This is the zero-based data block index. This number indicates the zerobased index of the data block in which this heap item resides.
-			int32_t hidBlockIndex{};
+		public:
+			HID() = default;
+			HID(const std::vector<types::byte_t>& data)
+				: m_hid(utils::slice(data, 0, 4, 4, utils::toT_l<uint64_t>)) 
+			{
+				_init();
+			}
+			/// @brief (5 bits) MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.
+			int16_t getHIDType() const 
+			{ 
+				return m_hid & 0x1F;
+			}
+			/// @brief (11 bits) This is the 1-based index value that identifies 
+			/// an item allocated from the heap node. This value MUST NOT be zero.
+			size_t getHIDIndex() const
+			{ 
+				int32_t index = m_hid & 0xFFE0;
+				ASSERT((index != 0), "[ERROR] Invalid HID Index");
+				return index;
+			}
+			/// @brief (16 bits) This is the zero-based data block index. 
+			/// This number indicates the zerobased index of the data block in which this heap item resides.
+			size_t getHIDBlockIndex() const 
+			{ 
+				return m_hid & 0xFFFF0000;
+			}
+
+			uint64_t getHIDRaw() const
+			{
+				return m_hid;
+			}
+		private:
+			void _init()
+			{
+				ASSERT(((types::NIDType)getHIDType() == types::NIDType::HID), "[ERROR] Invalid HID Type");
+			}
+		private:
+			uint64_t m_hid;
 		};
 
 		/**
@@ -45,7 +77,7 @@ namespace reader {
 			int64_t bClientSig{};
 			/// (4 bytes): HID that points to the User Root record. The User Root 
 			/// record contains data that is specific to the higher level. 
-			int64_t hidUserRoot{};
+			HID hidUserRoot{};
 			/// (4 bytes): Per-block Fill Level Map. This array consists of eight 4-bit values that indicate the fill level 
 			/// for each of the first 8 data blocks (including this header block). If the HN has fewer than 8 data blocks, 
 			/// then the values corresponding to the non-existent data blocks MUST be set to zero. The following table explains 
@@ -101,7 +133,8 @@ namespace reader {
 			/// An extra entry exists at the cAlloc + 1st position to mark the offset of the next available slot. 
 			/// Therefore, the nth allocation starts at offset rgibAlloc[n] (from the beginning of the HN header), 
 			/// and its size is calculated as rgibAlloc[n + 1] – rgibAlloc[n] bytes. 
-			std::vector<types::byte_t> rgibAlloc{};
+			/// The size of each entry in the PST is 2 bytes.
+			std::vector<uint32_t> rgibAlloc{};
 		};
 
 		/**
@@ -123,7 +156,7 @@ namespace reader {
 			int16_t bIdxLevels{};
 			/// (4 bytes): This is the HID that points to the BTH entries for this BTHHEADER. 
 			/// The data consists of an array of BTH records. This value is set to zero if the BTH is empty. 
-			int64_t hidRoot{};
+			HID hidRoot{};
 		};
 
 		/**
@@ -137,7 +170,7 @@ namespace reader {
 			/// The size of the key is specified in the cbKey field in the corresponding BTHHEADER 
 			/// structure (section 2.3.2.1). The size and contents of the key are specific to the 
 			/// higher level structure that implements this BTH. 
-			int64_t key{};
+			std::vector<types::byte_t> key{};
 			/// (4 bytes): HID of the next level index record array. This contains the HID of the heap 
 			/// item that contains the next level index record array.
 			int64_t hidNextLevel{};
@@ -155,11 +188,11 @@ namespace reader {
 			/// in the cbKey field in the corresponding BTHHEADER structure(section 2.3.2.1). 
 			/// The size and contents of the key are specific to the higher level 
 			/// structure that implements this BTH.
-			int64_t key{};
+			std::vector<types::byte_t> key{};
 			/// (variable): This is the key of the record. The size of the key is 
 			/// specified in the cbKey field in the corresponding BTHHEADER structure(section 2.3.2.1). 
 			/// The size and contents of the key are specific to the higher level structure that implements this BTH.
-			int64_t data{};
+			std::vector<types::byte_t> data{};
 		};
 
 		/**
@@ -192,9 +225,11 @@ namespace reader {
 		*/
 		struct HNID
 		{
-			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID. 
+			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
+			/// Otherwise, the HNID refers to an NID. 
 			core::NID nid{};
-			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID. 
+			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
+			/// Otherwise, the HNID refers to an NID. 
 			HID hid{};
 		};
 
@@ -400,6 +435,17 @@ namespace reader {
 			std::vector<types::byte_t> rgbCEB{};
 		};
 
+		struct HNBlock
+		{
+			HNPageMap map{};
+			/// won't be present in the first block
+			HNPageHDR pheader{}; 
+			/// will only be present in 8th block and every 8 + 128 block thereafter
+			HNBitMapHDR bmheader{};
+			/// this data is not trimmed. It includes everything
+			std::vector<types::byte_t> data{};
+		};
+
 		/**
 		 * @brief The Heap-on-Node defines a standard heap over a node's data stream. 
 		 * Taking advantage of the flexible structure of the node, the organization 
@@ -416,12 +462,217 @@ namespace reader {
 		class HN 
 		{
 		public:
-			enum class ConfigType
+			HN(const std::vector<types::byte_t>& dataOfFirstDataBlock, size_t nDataBlocks) 
+				: m_nDataBlocks(nDataBlocks)
 			{
-				SINGLE_BLOCK,
-				XBLOCK,
-				XXBLOCK
-			};
+				m_hnhdr = readHNHDR(dataOfFirstDataBlock, 0, nDataBlocks);
+				HNBlock block{};
+				block.map = readHNPageMap(dataOfFirstDataBlock, m_hnhdr.ibHnpm);
+				block.data = dataOfFirstDataBlock;
+				m_blocks.push_back(block);
+			}
+
+			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
+			{
+				ASSERT((m_blocks.size() + 1 == blockIdx), "[ERROR] Invalid blockIdx");
+				if(blockIdx == 8 || blockIdx % 8 + 128 == 0)
+				{
+					HNBitMapHDR bmheader = readHNBitMapHDR(data);
+					HNPageMap map = readHNPageMap(data, bmheader.ibHnpm);
+					HNBlock block{};
+					block.bmheader = bmheader;
+					block.map = map;
+					block.data = data;
+					m_blocks.push_back(block);
+				}
+				else
+				{
+					HNPageHDR pheader = readHNPageHDR(data);
+					HNPageMap map = readHNPageMap(data, pheader.ibHnpm);
+					HNBlock block{};
+					block.pheader = pheader;
+					block.map = map;
+					block.data = data;
+					m_blocks.push_back(block);
+				}
+				return true;
+			}
+
+			types::BType getBType() const { return utils::toBType(m_hnhdr.bClientSig); }
+
+			HNHDR getHeader() const { return m_hnhdr; }
+
+			uint32_t offset(size_t blockIdx, size_t pageIdx)
+			{
+				ASSERT((blockIdx < m_blocks.size()), "[ERROR] Invalid blockIdx");
+				ASSERT( (pageIdx < m_blocks.at(blockIdx).map.rgibAlloc.size() ), "[ERROR] Invalid pageIdx");
+				return m_blocks.at(blockIdx).map.rgibAlloc.at(pageIdx);
+			}
+
+			HNBlock at(size_t blockIdx) const { return m_blocks.at(blockIdx); }
+
+			std::vector<types::byte_t> slice(size_t blockIdx, size_t pageIdx, size_t size)
+			{
+				HNBlock block = at(blockIdx);
+				size_t offset = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx));
+				return utils::slice(block.data, offset, static_cast<size_t>(offset + size), size);
+			}
+
+			size_t size() const { return m_blocks.size(); }
+
+			static HNHDR readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
+			{
+				LOG("[INFO] Data Block Size: %i", bytes.size());
+				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
+				HNHDR hnhdr{};
+				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
+				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<uint32_t>);
+				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<uint32_t>);
+				hnhdr.hidUserRoot = HID(utils::slice(bytes, 4, 8, 4));
+				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
+
+				uint32_t hidType = hnhdr.hidUserRoot.getHIDType();
+				ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType)
+					ASSERT(std::cmp_equal(hnhdr.bSig, 0xEC), "[ERROR] Invalid HN signature");
+				ASSERT((utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES)), "[ERROR] Invalid BType");
+				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");
+
+				if (nDataBlocks < 8)
+				{
+					for (int64_t i = nDataBlocks; i < 8; i++)
+					{
+						ASSERT(((int16_t)hnhdr.rgbFillLevel[i] == (int16_t)types::FillLevel::LEVEL_EMPTY),
+							"[ERROR] Fill level must be empty for block at idx [%i]", i);
+					}
+				}
+				return hnhdr;
+			}
+
+			static HNPageMap readHNPageMap(const std::vector<types::byte_t>& bytes, int64_t start)
+			{
+				HNPageMap pg{};
+				pg.cAlloc = utils::slice(bytes, start, start + 2ll, 2ll, utils::toT_l<decltype(pg.cAlloc)>);
+				pg.cFree = utils::slice(bytes, start + 2ll, start + 4ll, 2ll, utils::toT_l<decltype(pg.cFree)>);
+
+				std::vector<types::byte_t> allocBytes = utils::slice(
+					bytes,
+					start + 4ll,
+					start + 4ll + pg.cAlloc * 2ll + 2ll,
+					pg.cAlloc * 2ll + 2ll
+				);
+
+				// Each rgibAlloc entry is 2 bytes with cAlloc + 1 entries. 
+				ASSERT((allocBytes.size() % 2 == 0), "[ERROR] Size should always be even");
+				for (size_t i = 2; i < allocBytes.size() + 1; i += 2)
+				{
+					pg.rgibAlloc.push_back(utils::slice(allocBytes, i - 2ull, i, 2ull, utils::toT_l<uint32_t>));
+				}
+				ASSERT((pg.rgibAlloc.size() == pg.cAlloc + 1), "[ERROR] Should be cAlloc + 1 entries");
+
+				size_t size = 0;
+				for (size_t i = 1; i < pg.rgibAlloc.size(); i++)
+				{
+					ASSERT((pg.rgibAlloc[i] > pg.rgibAlloc[i - 1]), "[ERROR]");
+					size += pg.rgibAlloc[i] - pg.rgibAlloc[i - 1];
+				}
+				// 12 is the size of the HNHDR Header
+				// 4 is the combined size of cAlloc and cFree
+				// TODO: an HNHDR header wont always be present so subtract by 12 won't always work.
+				ASSERT((size == bytes.size() - 12 - 4 - allocBytes.size()), "[ERROR] Invalid size");
+				return pg;
+			}
+
+			static HNPageHDR readHNPageHDR(const std::vector<types::byte_t>& bytes)
+			{
+				ASSERT((bytes.size() == 2), "[ERROR] Invalid size");
+				HNPageHDR hdr{};
+				hdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<int32_t>);
+				return hdr;
+			}
+
+			static HNBitMapHDR readHNBitMapHDR(const std::vector<types::byte_t>& bytes)
+			{
+				ASSERT((bytes.size() == 66), "[ERROR] Invalid size");
+				HNBitMapHDR hdr{};
+				hdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<int32_t>);
+
+				std::vector<types::byte_t> fillBytes = utils::slice(bytes, 2, 66, 64);
+				for (size_t i = 0; i < fillBytes.size(); i++)
+				{
+					uint8_t byte = fillBytes[i];
+					hdr.rgbFillLevel.push_back(byte & 0x0F); // least significant 4 bits first
+					hdr.rgbFillLevel.push_back(byte & 0xF0); // most significant 4 bits second
+				}
+				ASSERT((hdr.rgbFillLevel.size() == 128), "[ERROR]");
+				return hdr;
+			}
+			private:
+				HNHDR m_hnhdr;
+				size_t m_nDataBlocks;
+				std::vector<HNBlock> m_blocks;
+		};
+
+		class BTreeHeap
+		{
+		public:
+			BTreeHeap(const HN& hn) : m_hn(hn) 
+			{ 
+				_init();
+			}
+
+			static BTHHeader readBTHHeader(const std::vector<types::byte_t>& bytes)
+			{
+				ASSERT((bytes.size() == 8), "[ERROR]");
+				BTHHeader header{};
+				header.bType = utils::slice(bytes, 0, 1, 1, utils::toT_l<int16_t>);
+				header.cbKey = utils::slice(bytes, 1, 2, 1, utils::toT_l<int16_t>);
+				header.cbEnt = utils::slice(bytes, 2, 3, 1, utils::toT_l<int16_t>);
+				header.bIdxLevels = utils::slice(bytes, 3, 4, 1, utils::toT_l<int16_t>);
+				header.hidRoot = HID(utils::slice(bytes, 4, 8, 4));
+
+				ASSERT(((types::BType)header.bType == types::BType::BTH), "[ERROR] Invalid BTree on Heap");
+				ASSERT((utils::isIn(header.cbKey, { 2, 4, 8, 16 })), "[ERROR]");
+				ASSERT((header.cbEnt > 0 && header.cbEnt <= 32), "[ERROR]");
+				return header;
+			}
+
+			static IntermediateBTHRecord readIntermediateBTHRecord(const std::vector<types::byte_t>& bytes, int16_t keySize)
+			{
+				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
+				IntermediateBTHRecord record{};
+				record.key = utils::slice(bytes, (int16_t)0, keySize, keySize);
+				record.hidNextLevel = utils::slice(
+					bytes,
+					keySize,
+					static_cast<int16_t>(keySize + 4),
+					static_cast<int16_t>(4),
+					utils::toT_l<int64_t>
+				);
+				return record;
+			}
+
+			static LeafBTHRecord readLeadBTHRecord(const std::vector<types::byte_t>& bytes, size_t keySize, size_t dataSize)
+			{
+				ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
+				LeafBTHRecord record{};
+				record.key = utils::slice(bytes, 0ull, keySize, keySize);
+				record.data = utils::slice(bytes, keySize, keySize + dataSize, dataSize);
+				return record;
+			}
+
+		private:
+			void _init()
+			{
+				std::vector<types::byte_t> headerBytes = m_hn.slice(
+					0,
+					m_hn.getHeader().hidUserRoot.getHIDBlockIndex(),
+					8ull
+				);
+				m_header = readBTHHeader(headerBytes);
+			}
+		private:
+			HN m_hn;
+			BTHHeader m_header;
 		};
 
 		class LTP
@@ -440,58 +691,20 @@ namespace reader {
 				ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
 				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
 				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				_readHN(dataTree);
+				HN hn = _readHN(dataTree);
+				BTreeHeap btreeHeap(hn);
 			}
 
-			void _readHN(ndb::DataTree& tree)
+			HN _readHN(ndb::DataTree& tree)
 			{
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
-
-				HNHDR hnHdr = LTP::readHNHDR(tree.dataBlocks.at(0).data, 0, tree.dataBlocks.size());
-				HNPageMap pMap = _readHNPageMap(tree.dataBlocks.at(0).data, hnHdr.ibHnpm + 12);
+				HN hn(tree.dataBlocks.at(0).data, tree.dataBlocks.size());
+				//uint32_t bthPos = map.rgibAlloc.at(hdr.hidUserRoot.getHIDBlockIndex());
 				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
 				{
-					const ndb::DataBlock& block = tree.dataBlocks.at(i);
+					hn.addBlock(tree.dataBlocks.at(i).data, i);
 				}
-			}
-
-			static HNHDR readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
-			{
-				LOG("[INFO] Data Block Size: %i", bytes.size());
-				ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
-				HNHDR hnhdr{};
-				hnhdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
-				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<uint32_t>);
-				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<uint32_t>);
-				hnhdr.hidUserRoot = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
-				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
-
-				uint32_t hidType = hnhdr.hidUserRoot & 0x1F;
-				ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType)
-				ASSERT(std::cmp_equal(hnhdr.bSig, 0xEC), "[ERROR] Invalid HN signature");
-				ASSERT( (utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES) ), "[ERROR] Invalid BType");
-				ASSERT((hnhdr.rgbFillLevel.size() == 8), "[ERROR] Invalid Fill Level size must be 8");
-
-				if (nDataBlocks < 8) 
-				{
-					for (int64_t i = nDataBlocks; i < 8; i++)
-					{
-						ASSERT(((int16_t)hnhdr.rgbFillLevel[i] == (int16_t)types::FillLevel::LEVEL_EMPTY),
-							"[ERROR] Fill level must be empty for block at idx [%i]", i);
-					}
-				}
-
-
-				return hnhdr;
-			}
-
-			HNPageMap _readHNPageMap(const std::vector<types::byte_t>& bytes, int64_t start)
-			{
-				HNPageMap pg{};
-				pg.cAlloc = utils::slice(bytes, start, start + 2ll, 2ll, utils::toT_l<decltype(pg.cAlloc)>);
-				pg.cFree = utils::slice(bytes, start + 2ll, start + 4ll, 2ll, utils::toT_l<decltype(pg.cFree)>);
-
-				return pg;
+				return hn;
 			}
 
 		private:
