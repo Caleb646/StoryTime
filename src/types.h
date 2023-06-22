@@ -83,6 +83,42 @@ namespace reader {
             BBTENTRY,
             NBTENTRY
         };
+
+        enum class PropertyType
+        {
+            PtypInteger16               =   0x0002, /// 2 bytes; a 16 - bit integer
+            PtypInteger32               =   0x0003, /// 4 bytes; a 32 - bit integer
+            PtypFloating32              =   0x0004, /// 4 bytes; a 32 - bit floating point number
+            PtypFloating64              =   0x0005, /// 8 bytes; a 64 - bit floating point number
+            PtypCurrency                =   0x0006, /// 8 bytes; a 64 - bit signed, scaled integer representation of a decimal currency value, with four places to the right of the decimal point
+            PtypFloatingTime            =   0x0007, /// 8 bytes; a 64 - bit floating point number in which the whole number part represents the number of days since December 30, 1899, and the fractional part represents the fraction of a day since midnight
+            PtypErrorCode               =   0x000A, /// 4 bytes; a 32 - bit integer encoding error information as specified in section 2.4.1.
+            PtypBoolean                 =   0x000B, /// 1 byte; restricted to 1 or 0
+            PtypInteger64               =   0x0014, /// 8 bytes; a 64 - bit integer
+            PtypString                  =   0x001F, /// Variable size; a string of Unicode characters in UTF - 16LE format encoding with terminating null character(0x0000).
+            PtypString8                 =   0x001E, /// Variable size; a string of multibyte characters in externally specified encoding with terminating null character(single 0 byte).
+            PtypTime                    =   0x0040, /// 8 bytes; a 64 - bit integer representing the number of 100 - nanosecond intervals since January 1, 1601
+            PtypGuid                    =   0x0048, /// 16 bytes; a GUID with Data1, Data2, and Data3 fields in little - endian format
+            PtypServerId                =   0x00FB, /// Variable size; a 16 - bit COUNT field followed by a structure as specified in section 2.11.1.4.
+            PtypRestriction             =   0x00FD, /// Variable size; a byte array representing one or more Restriction structures as specified in section 2.12.
+            PtypRuleAction              =   0x00FE, /// Variable size; a 16 - bit COUNT field followed by that many rule action structures, as specified in[MS - OXORULE] section 2.2.5.
+            PtypBinary                  =   0x0102, /// Variable size; a COUNT field followed by that many bytes.
+            PtypMultipleInteger16       =   0x1002, /// Variable size; a COUNT field followed by that many PtypInteger16 values.
+            PtypMultipleInteger32       =   0x1003, /// Variable size; a COUNT field followed by that many PtypInteger32 values.
+            PtypMultipleFloating32      =   0x1004, /// Variable size; a COUNT field followed by that many PtypFloating32 values.
+            PtypMultipleFloating64      =   0x1005, /// Variable size; a COUNT field followed by that many PtypFloating64 values.
+            PtypMultipleCurrency        =   0x1006, /// Variable size; a COUNT field followed by that many PtypCurrency values.
+            PtypMultipleFloatingTime    =   0x1007, /// Variable size; a COUNT field followed by that many PtypFloatingTime values.
+            PtypMultipleInteger64       =   0x1014, /// Variable size; a COUNT field followed by that many PtypInteger64 values.
+            PtypMultipleString          =   0x101F, /// Variable size; a COUNT field followed by that many PtypString values.
+            PtypMultipleString8         =   0x101E, /// Variable size; a COUNT field followed by that many PtypString8 values.
+            PtypMultipleTime            =   0x1040, /// Variable size; a COUNT field followed by that many PtypTime values.
+            PtypMultipleGuid            =   0x1048, /// Variable size; a COUNT field followed by that many PtypGuid values.
+            PtypMultipleBinary          =   0x1102, /// Variable size; a COUNT field followed by that many PtypBinary values.
+            PtypUnspecified             =   0x0000, /// Any: this property type value matches any type; a server MUST return the actual type in its response.Servers MUST NOT return this type in response to a client request other than NspiGetIDsFromNames or the RopGetPropertyIdsFromNames ROP request([MS - OXCROPS] section 2.2.8.1).
+            PtypNull                    =   0x0001, /// None: This property is a placeholder.
+            PtypObject                  =   0x000D, /// The property value is a Component Object Model(COM) object, as specified in section 2.11.1.5.
+        };
 	}
 }
 

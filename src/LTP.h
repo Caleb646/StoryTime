@@ -25,7 +25,7 @@ namespace reader {
 		public:
 			HID() = default;
 			HID(const std::vector<types::byte_t>& data)
-				: m_hid(utils::slice(data, 0, 4, 4, utils::toT_l<uint64_t>)) 
+				: m_hid(utils::slice(data, 0, 4, 4, utils::toT_l<size_t>))
 			{
 				_init();
 			}
@@ -36,9 +36,9 @@ namespace reader {
 			}
 			/// @brief (11 bits) This is the 1-based index value that identifies 
 			/// an item allocated from the heap node. This value MUST NOT be zero.
-			size_t getHIDIndex() const
+			size_t getHIDAllocIndex() const
 			{ 
-				int32_t index = m_hid & 0xFFE0;
+				size_t index = (m_hid >> 5) & 0x7FF;
 				ASSERT((index != 0), "[ERROR] Invalid HID Index");
 				return index;
 			}
@@ -46,20 +46,61 @@ namespace reader {
 			/// This number indicates the zerobased index of the data block in which this heap item resides.
 			size_t getHIDBlockIndex() const 
 			{ 
-				return m_hid & 0xFFFF0000;
+				return (m_hid >> 16) & 0xFFFF;
 			}
 
-			uint64_t getHIDRaw() const
+			size_t getHIDRaw() const
 			{
 				return m_hid;
 			}
+			static constexpr size_t id() { return 10; }
 		private:
 			void _init()
 			{
-				ASSERT(((types::NIDType)getHIDType() == types::NIDType::HID), "[ERROR] Invalid HID Type");
+				ASSERT(((types::NIDType)getHIDType() == types::NIDType::HID),
+					"[ERROR] Invalid HID Type");
+				ASSERT((getHIDAllocIndex() > 0), "[ERROR]");
 			}
 		private:
-			uint64_t m_hid;
+			size_t m_hid;
+		};
+
+		/**
+		 * @brief = An HNID is a 32-bit hybrid value that represents either an HID or an NID.
+		 * The determination is made by examining the hidType (or equivalently, nidType) value.
+		 * The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID.
+		 * An HNID that refers to an HID indicates that the item is stored in the data block. An HNID that
+		 * refers to an NID indicates that the item is stored in the subnode block, and the NID is the local
+		 * NID under the subnode where the raw data is located.
+		*/
+		class HNID
+		{
+		public:
+			HNID() = default;
+			HNID(const std::vector<types::byte_t>& data)
+				: m_data(data)
+			{
+				ASSERT((m_data.size() == 4), "[ERROR]");
+			}
+
+			template<typename IDType>
+			IDType as() const
+			{
+				/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
+				/// Otherwise, the HNID refers to an NID. 
+				if constexpr (IDType::id() == HID::id())
+				{
+					return HID(m_data);
+				}
+				/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
+				/// Otherwise, the HNID refers to an NID. 
+				else if constexpr (IDType::id() == core::NID::id())
+				{
+					return core::NID(m_data);
+				}
+			}
+		private:
+			std::vector<types::byte_t> m_data{};
 		};
 
 		/**
@@ -173,7 +214,9 @@ namespace reader {
 			std::vector<types::byte_t> key{};
 			/// (4 bytes): HID of the next level index record array. This contains the HID of the heap 
 			/// item that contains the next level index record array.
-			int64_t hidNextLevel{};
+			HID hidNextLevel{};
+
+			static constexpr size_t id() { return 6;}
 		};
 
 		/**
@@ -189,10 +232,120 @@ namespace reader {
 			/// The size and contents of the key are specific to the higher level 
 			/// structure that implements this BTH.
 			std::vector<types::byte_t> key{};
-			/// (variable): This is the key of the record. The size of the key is 
-			/// specified in the cbKey field in the corresponding BTHHEADER structure(section 2.3.2.1). 
-			/// The size and contents of the key are specific to the higher level structure that implements this BTH.
+			/// (variable) : This contains the actual data associated with the key.The size of the data is
+			///	specified in the cbEnt field in the corresponding BTHHEADER structure.The size and contents of
+			///	the data are specific to the higher level structure that implements this BTH.
 			std::vector<types::byte_t> data{};
+
+			static constexpr size_t id() { return 7; }
+		};
+
+		/**
+		* @brief
+		*/
+		struct PCBTHRecord
+		{
+			/// (2 bytes): Property ID, as specified in [MS-OXCDATA] section 2.9. This is the upper 16 bits of the 
+			/// property tag value. This is a manifestation of the BTH record (section 2.3.2.3) 
+			/// and constitutes the key of this record. 
+			uint32_t wPropId{};
+
+			/// (2 bytes): Property ID, as specified in [MS-OXCDATA] section 2.9. This is the 
+			/// upper 16 bits of the property tag value. This is a manifestation of the 
+			/// BTH record (section 2.3.2.3) and constitutes the key of this record.
+			uint32_t wPropType{};
+
+			/// (4 bytes): Depending on the data size of the property type indicated 
+			/// by wPropType and a few other factors, this field represents different values. 
+			/// The following table explains the value contained in dwValueHnid based on the 
+			/// different scenarios. An HNID that refers to an HID indicates that the item 
+			/// is stored in the data block. An HNID that refers
+			/// to an NID indicates that the item is stored in the subnode block, and the 
+			/// NID is the local NID under
+			///	the subnode where the raw data is located.
+			std::vector<types::byte_t> dwValueHnid{};
+			//HNID dwValueHnid{};
+
+			/*
+			* Variable size?	Fixed data size		NID_TYPE(dwValueHnid) == NID_TYPE_HID?	 dwValueHnid
+				N					<= 4 bytes				-								 	Data Value
+									> 4 bytes				Y								 	HID
+				Y					-						Y								 	HID (<= 3580 bytes)
+															N								 	NID (subnode, > 3580 bytes)
+			*/
+			static constexpr size_t id() { return 11; }
+		};
+
+		class Record
+		{
+		public:
+			Record(const std::vector<types::byte_t>& data, size_t keySize, size_t dataSize = 0)
+				: m_data(data), m_keySize(keySize), m_dataSize(dataSize) {}
+			
+			static IntermediateBTHRecord asIntermediateBTHRecord(
+				const std::vector<types::byte_t>& bytes, 
+				size_t keySize
+			)
+			{
+				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
+				IntermediateBTHRecord record{};
+				record.key = utils::slice(bytes, 0ull, keySize, keySize);
+				record.hidNextLevel = HID(utils::slice(
+					bytes,
+					keySize,
+					keySize + 4ull,
+					4ull
+				));
+				return record;
+			}
+
+			static LeafBTHRecord asLeafBTHRecord(
+				const std::vector<types::byte_t>& bytes, 
+				size_t keySize, 
+				size_t dataSize
+			)
+			{
+				ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
+				LeafBTHRecord record{};
+				record.key = utils::slice(bytes, 0ull, keySize, keySize);
+				record.data = utils::slice(bytes, keySize, keySize + dataSize, dataSize);
+				return record;
+			}
+
+			static PCBTHRecord asPCBTHRecord(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize,
+				size_t dataSize
+			)
+			{
+				ASSERT((bytes.size() == 8), "[ERROR]");
+				ASSERT((keySize == 2), "[ERROR]");
+				ASSERT((dataSize == 6), "[ERROR]");
+				PCBTHRecord record{};
+				record.wPropId = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
+				record.wPropType = utils::slice(bytes, 2, 4, 2, utils::toT_l<uint32_t>);
+				record.dwValueHnid = utils::slice(bytes, 4, 8, 4);
+				//record.dwValueHnid = HNID(utils::slice(bytes, 4, 8, 4));
+
+				ASSERT( ( utils::isIn(record.wPropType, utils::PROPERTY_TYPE_VALUES) ), "[ERROR] Invalid property type");
+				return record;
+			}
+
+			template<typename RecordType>
+			RecordType as() const
+			{
+				if constexpr(RecordType::id() == LeafBTHRecord::id())
+					return asLeafBTHRecord(m_data, m_keySize, m_dataSize);
+				else if constexpr(RecordType::id() == IntermediateBTHRecord::id())
+					return asIntermediateBTHRecord(m_data, m_keySize);
+				else if constexpr(RecordType::id() == PCBTHRecord::id())
+					return asPCBTHRecord(m_data, m_keySize, m_dataSize);
+				//static_assert(false, "Invalid record type");
+			}
+		private:
+			size_t m_keySize{};
+			size_t m_dataSize{};
+			std::vector<types::byte_t> m_data{};
 		};
 
 		/**
@@ -210,60 +363,7 @@ namespace reader {
 		 * Accessing the PC BTHHEADER 
 		 * The BTHHEADER structure of a PC is accessed through the hidUserRoot of the HNHDR structure of the containing HN.
 		*/
-		struct PropertyContext
-		{
 
-		};
-
-		/**
-		 * @brief = An HNID is a 32-bit hybrid value that represents either an HID or an NID. 
-		 * The determination is made by examining the hidType (or equivalently, nidType) value. 
-		 * The HNID refers to an HID if the hidType is NID_TYPE_HID. Otherwise, the HNID refers to an NID. 
-		 * An HNID that refers to an HID indicates that the item is stored in the data block. An HNID that 
-		 * refers to an NID indicates that the item is stored in the subnode block, and the NID is the local 
-		 * NID under the subnode where the raw data is located. 
-		*/
-		struct HNID
-		{
-			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
-			/// Otherwise, the HNID refers to an NID. 
-			core::NID nid{};
-			/// The HNID refers to an HID if the hidType is NID_TYPE_HID. 
-			/// Otherwise, the HNID refers to an NID. 
-			HID hid{};
-		};
-
-		/**
-		 * @brief 
-		*/
-		struct PCBTHRecord
-		{
-			/// (2 bytes): Property ID, as specified in [MS-OXCDATA] section 2.9. This is the upper 16 bits of the 
-			/// property tag value. This is a manifestation of the BTH record (section 2.3.2.3) 
-			/// and constitutes the key of this record. 
-			int32_t wPropId{};
-
-			/// (2 bytes): Property ID, as specified in [MS-OXCDATA] section 2.9. This is the 
-			/// upper 16 bits of the property tag value. This is a manifestation of the 
-			/// BTH record (section 2.3.2.3) and constitutes the key of this record.
-			int32_t wPropType{};
-
-			/// (4 bytes): Depending on the data size of the property type indicated 
-			/// by wPropType and a few other factors, this field represents different values. 
-			/// The following table explains the value contained in dwValueHnid based on the 
-			/// different scenarios. In the event where the dwValueHnid value contains an 
-			/// HID or NID (section 2.3.3.2), the actual data is stored in the corresponding 
-			/// heap or subnode entry, respectively. 
-			int64_t dwValueHnid{};
-
-			/*
-			* Variable size?	Fixed data size		NID_TYPE(dwValueHnid) == NID_TYPE_HID?	 dwValueHnid 
-				N					<= 4 bytes				-								 	Data Value 
-									> 4 bytes				Y								 	HID 
-				Y					-						Y								 	HID (<= 3580 bytes) 
-															N								 	NID (subnode, > 3580 bytes) 
-			*/
-		};
 
 		/**
 		 * @brief When the MV property contains variable-size elements, 
@@ -462,8 +562,12 @@ namespace reader {
 		class HN 
 		{
 		public:
-			HN(const std::vector<types::byte_t>& dataOfFirstDataBlock, size_t nDataBlocks) 
-				: m_nDataBlocks(nDataBlocks)
+			HN(
+				const std::vector<types::byte_t>& dataOfFirstDataBlock, 
+				ndb::NBTEntry nbtentry,
+				size_t nDataBlocks
+			) 
+				: m_nDataBlocks(nDataBlocks), m_nbtentry(nbtentry)
 			{
 				m_hnhdr = readHNHDR(dataOfFirstDataBlock, 0, nDataBlocks);
 				HNBlock block{};
@@ -510,6 +614,14 @@ namespace reader {
 			}
 
 			HNBlock at(size_t blockIdx) const { return m_blocks.at(blockIdx); }
+			size_t blockSize(HID hid) const { return blockSize(hid.getHIDBlockIndex()); }
+			size_t blockSize(size_t blockIdx) const { return at(blockIdx).data.size(); }
+
+			size_t allocSize(size_t blockIdx, size_t pageIdx)
+			{
+				HNBlock block = at(blockIdx);
+				return (size_t)block.map.rgibAlloc.at(pageIdx + 1) - (size_t)block.map.rgibAlloc.at(pageIdx);
+			}
 
 			std::vector<types::byte_t> slice(size_t blockIdx, size_t pageIdx, size_t size)
 			{
@@ -518,7 +630,40 @@ namespace reader {
 				return utils::slice(block.data, offset, static_cast<size_t>(offset + size), size);
 			}
 
-			size_t size() const { return m_blocks.size(); }
+			std::vector<types::byte_t> alloc(const HID& hid)
+			{
+				size_t blockIdx = hid.getHIDBlockIndex();
+				size_t pageIdx = hid.getHIDAllocIndex();
+				HNBlock block = at(blockIdx);
+				size_t start = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx - 1));
+				size_t end = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx));
+				size_t size = end - start;
+				return utils::slice(block.data, start, end, size);
+			}
+
+			/**
+			 * @brief Slices the block's data at blockIdx into 
+			 * allocations specificed by the block's map.
+			 * @param blockIdx 
+			 * @return 
+			*/
+			std::vector<std::vector<types::byte_t>> allocs(size_t blockIdx)
+			{
+				HNBlock block = at(blockIdx);
+				ASSERT((block.map.rgibAlloc.size() > 0), "[ERROR] Invalid number of allocations");
+				std::vector<std::vector<types::byte_t>> allocs{};
+				for (size_t i = 1; i < block.map.rgibAlloc.size(); i++)
+				{
+					size_t start = static_cast<size_t>(block.map.rgibAlloc.at(i - 1));
+					size_t end = static_cast<size_t>(block.map.rgibAlloc.at(i));
+					size_t size = end - start;
+					allocs.push_back(utils::slice(block.data, start, end, size));
+				}
+				ASSERT((allocs.size() == block.map.rgibAlloc.size() - 1), "[ERROR] Invalid number of allocations");
+				return allocs;
+			}
+
+			size_t nblocks() const { return m_blocks.size(); }
 
 			static HNHDR readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, int64_t nDataBlocks)
 			{
@@ -610,6 +755,7 @@ namespace reader {
 				HNHDR m_hnhdr;
 				size_t m_nDataBlocks;
 				std::vector<HNBlock> m_blocks;
+				ndb::NBTEntry m_nbtentry{};
 		};
 
 		class BTreeHeap
@@ -636,43 +782,137 @@ namespace reader {
 				return header;
 			}
 
-			static IntermediateBTHRecord readIntermediateBTHRecord(const std::vector<types::byte_t>& bytes, int16_t keySize)
+			static std::vector<Record> readBTHRecords(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize,
+				size_t bIdxLevels,
+				size_t dataSize = 0)
 			{
-				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
-				IntermediateBTHRecord record{};
-				record.key = utils::slice(bytes, (int16_t)0, keySize, keySize);
-				record.hidNextLevel = utils::slice(
-					bytes,
-					keySize,
-					static_cast<int16_t>(keySize + 4),
-					static_cast<int16_t>(4),
-					utils::toT_l<int64_t>
-				);
-				return record;
+				size_t rsize = keySize + dataSize;
+				size_t nRecords = bytes.size() / rsize;
+				ASSERT( (bytes.size() % rsize == 0), "[ERROR] nRecords must be a mutiple of keySize + dataSize");
+				std::vector<Record> records{};
+				records.reserve(nRecords);
+				for (size_t i = 0; i < nRecords; i++)
+				{
+					size_t start = i * rsize;
+					size_t end = start + rsize;
+					ASSERT((end - start == rsize), "[ERROR] Invalid size");
+					records.push_back(Record(
+							utils::slice(bytes, start, end, rsize),
+							keySize,
+							dataSize
+						)
+					);
+				}
+				ASSERT((records.size() == nRecords), "[ERROR] Invalid size");
+				return records;
 			}
 
-			static LeafBTHRecord readLeadBTHRecord(const std::vector<types::byte_t>& bytes, size_t keySize, size_t dataSize)
+			HID hidRoot() const
 			{
-				ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
-				LeafBTHRecord record{};
-				record.key = utils::slice(bytes, 0ull, keySize, keySize);
-				record.data = utils::slice(bytes, keySize, keySize + dataSize, dataSize);
-				return record;
+				return m_header.hidRoot;
+			}
+
+			size_t keySize() const
+			{
+				return m_header.cbKey;
+			}
+			size_t dataSize() const
+			{
+				return m_header.cbEnt;
+			}
+
+			std::vector<Record> records() const
+			{
+				return m_records;
 			}
 
 		private:
 			void _init()
 			{
-				std::vector<types::byte_t> headerBytes = m_hn.slice(
-					0,
-					m_hn.getHeader().hidUserRoot.getHIDBlockIndex(),
-					8ull
-				);
+				std::vector<types::byte_t> headerBytes = m_hn.alloc(m_hn.getHeader().hidUserRoot);
 				m_header = readBTHHeader(headerBytes);
+				m_records = readBTHRecords(
+					m_hn.alloc(m_header.hidRoot),
+					m_header.cbKey,
+					m_header.bIdxLevels,
+					m_header.cbEnt
+				);
 			}
 		private:
 			HN m_hn;
 			BTHHeader m_header;
+			std::vector<Record> m_records;
+		};
+
+		struct Property
+		{
+			types::PropertyType propType{types::PropertyType::PtypNull};
+			int64_t propEntrySize{0};
+			std::vector<types::byte_t> data{};
+		};
+
+		class PropertyContext
+		{
+		public:
+			PropertyContext(const ndb::NDB& ndb, HN& hn)
+				: m_hn(hn), m_bth(hn), m_ndb(ndb)
+			{
+				_init();
+			}
+
+			std::vector<Property> readProperties()
+			{
+				std::vector<Property> properties{};
+				for (const auto& record : m_records)
+				{
+					
+					auto [propSize, propEntrySize] = utils::PropertyTypeSize(record.wPropType);
+					bool fixed = true ? propSize != -1 : false;
+
+					Property prop{};
+					prop.propType = utils::PropertyType(record.wPropType);
+					prop.propEntrySize = propEntrySize;
+
+					if (fixed && propSize <= 4) // Data Value
+					{
+						prop.data = record.dwValueHnid;
+						properties.push_back(prop);
+					}
+															// check if HID 
+					else if ( (fixed && propSize > 4) || (record.dwValueHnid[0] & 0x1F) == 0) // HID
+					{
+						HID id = HID(record.dwValueHnid);
+						prop.data = m_hn.alloc(id);
+						properties.push_back(prop);
+					}
+					else // NID
+					{
+						ASSERT(false, "[ERROR] Invalid Property");
+					}
+				}
+				ASSERT((properties.size() == m_records.size()), "[ERROR] Invalid size");
+				return properties;
+			}
+
+		private:
+			void _init()
+			{
+				ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
+				ASSERT((m_bth.keySize() == 2), "[ERROR]");
+				ASSERT((m_bth.dataSize() == 6), "[ERROR]");
+				for(const auto& record : m_bth.records())
+				{
+					m_records.push_back(record.as<PCBTHRecord>());
+				}
+				readProperties();
+			}
+		private:
+			std::vector<PCBTHRecord> m_records{};
+			BTreeHeap m_bth;
+			HN m_hn;
+			const ndb::NDB& m_ndb;
 		};
 
 		class LTP
@@ -691,14 +931,14 @@ namespace reader {
 				ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
 				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
 				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				HN hn = _readHN(dataTree);
-				BTreeHeap btreeHeap(hn);
+				HN hn = _readHN(dataTree, nbtentry);
+				PropertyContext pc(m_ndb, hn);
 			}
 
-			HN _readHN(ndb::DataTree& tree)
+			HN _readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
 			{
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
-				HN hn(tree.dataBlocks.at(0).data, tree.dataBlocks.size());
+				HN hn(tree.dataBlocks.at(0).data, entry, tree.dataBlocks.size());
 				//uint32_t bthPos = map.rgibAlloc.at(hdr.hidUserRoot.getHIDBlockIndex());
 				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
 				{

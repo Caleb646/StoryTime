@@ -65,6 +65,41 @@ namespace reader {
             0xCC,
         };
 
+        std::vector<int64_t> PROPERTY_TYPE_VALUES = {
+            0x0002,
+            0x0003,
+            0x0004,
+            0x0005,
+            0x0006,
+            0x0007,
+            0x000A,
+            0x000B,
+            0x0014,
+            0x001F,
+            0x001E,
+            0x0040,
+            0x0048,
+            0x00FB,
+            0x00FD,
+            0x00FE,
+            0x0102,
+            0x1002,
+            0x1003,
+            0x1004,
+            0x1005,
+            0x1006,
+            0x1007,
+            0x1014,
+            0x101F,
+            0x101E,
+            0x1040,
+            0x1048,
+            0x1102,
+            0x0000,
+            0x0001,
+            0x000D,
+        };
+
         void log(int lineNumber, const char* fmt, ...)
         {
             char buffer[1000]{};
@@ -233,6 +268,135 @@ namespace reader {
             case 0xBC: return types::BType::PC;
             case 0xCC: return types::BType::Reserved6;
             default: return types::BType::Invalid;
+            }
+        }
+
+        template<typename T>
+        std::pair<int64_t, int64_t> PropertyTypeSize(T id)
+        {
+            static_assert(sizeof(id) >= sizeof(types::PropertyType), "PropertyID is larger than the passed type");
+            switch (static_cast<types::PropertyType>(id))
+            {
+                case types::PropertyType::PtypInteger16              : return { 2, 0 }; // fixed length and only a single 2 byte entry
+                case types::PropertyType::PtypInteger32              : return { 4, 0 };
+                case types::PropertyType::PtypFloating32             : return {4, 0};
+                case types::PropertyType::PtypFloating64             : return {8, 0};
+                case types::PropertyType::PtypCurrency               : return {8, 0};
+                case types::PropertyType::PtypFloatingTime           : return {8, 0};
+                case types::PropertyType::PtypErrorCode              : return {4, 0};
+                case types::PropertyType::PtypBoolean                : return {1, 0};
+                case types::PropertyType::PtypInteger64              : return {8, 0};
+                case types::PropertyType::PtypString                 : return {-1, 2}; // Null terminated & variable length structure with a fixed entry size of 2 bytes
+                case types::PropertyType::PtypString8                : return {-1, 0}; // Null terminated & variable length structure and only a single n byte entry
+                case types::PropertyType::PtypTime                   : return { 8, 0 };
+                case types::PropertyType::PtypGuid                   : return {16, 0};
+                case types::PropertyType::PtypServerId               : return {-1, 0}; // variable length structure and only a single n byte entry
+                case types::PropertyType::PtypRestriction            : return {-1, 1}; 
+                case types::PropertyType::PtypRuleAction             : return {-1, -1}; // variable structure size and variable entry size
+                case types::PropertyType::PtypBinary                 : return {-1, 0};
+                case types::PropertyType::PtypMultipleInteger16      : return {-1, 2}; // variable structure size and a fixed entry size of 2 bytes
+                case types::PropertyType::PtypMultipleInteger32      : return {-1, 4};
+                case types::PropertyType::PtypMultipleFloating32     : return {-1, 4};
+                case types::PropertyType::PtypMultipleFloating64     : return {-1, 8};
+                case types::PropertyType::PtypMultipleCurrency       : return {-1, 8};
+                case types::PropertyType::PtypMultipleFloatingTime   : return {-1, 8};
+                case types::PropertyType::PtypMultipleInteger64      : return {-1, 8};
+                case types::PropertyType::PtypMultipleString         : return {-1, -1};
+                case types::PropertyType::PtypMultipleString8        : return {-1, -1};
+                case types::PropertyType::PtypMultipleTime           : return {-1, -1};
+                case types::PropertyType::PtypMultipleGuid           : return {-1, -1};
+                case types::PropertyType::PtypMultipleBinary         : return {-1, -1};
+                case types::PropertyType::PtypUnspecified            : return {-1, -1};
+                case types::PropertyType::PtypNull                   : return {-1, 0};
+                case types::PropertyType::PtypObject: return { -1, 0 };
+                default: 
+                    ASSERT(false, "Unknown Property Type");
+                    return { 0, 0 };
+            }
+        }
+
+        types::PropertyType PropertyType(size_t id)
+        {
+            switch (id)
+            {
+            case 0x0002: return types::PropertyType::PtypInteger16           ;
+            case 0x0003: return types::PropertyType::PtypInteger32           ;
+            case 0x0004: return types::PropertyType::PtypFloating32          ;
+            case 0x0005: return types::PropertyType::PtypFloating64          ;
+            case 0x0006: return types::PropertyType::PtypCurrency            ;
+            case 0x0007: return types::PropertyType::PtypFloatingTime        ;
+            case 0x000A: return types::PropertyType::PtypErrorCode           ;
+            case 0x000B: return types::PropertyType::PtypBoolean             ;
+            case 0x0014: return types::PropertyType::PtypInteger64           ;
+            case 0x001F: return types::PropertyType::PtypString              ;
+            case 0x001E: return types::PropertyType::PtypString8             ;
+            case 0x0040: return types::PropertyType::PtypTime                ;
+            case 0x0048: return types::PropertyType::PtypGuid                ;
+            case 0x00FB: return types::PropertyType::PtypServerId            ;
+            case 0x00FD: return types::PropertyType::PtypRestriction         ;
+            case 0x00FE: return types::PropertyType::PtypRuleAction          ;
+            case 0x0102: return types::PropertyType::PtypBinary              ;
+            case 0x1002: return types::PropertyType::PtypMultipleInteger16   ;
+            case 0x1003: return types::PropertyType::PtypMultipleInteger32   ;
+            case 0x1004: return types::PropertyType::PtypMultipleFloating32  ;
+            case 0x1005: return types::PropertyType::PtypMultipleFloating64  ;
+            case 0x1006: return types::PropertyType::PtypMultipleCurrency    ;
+            case 0x1007: return types::PropertyType::PtypMultipleFloatingTime;
+            case 0x1014: return types::PropertyType::PtypMultipleInteger64   ;
+            case 0x101F: return types::PropertyType::PtypMultipleString      ;
+            case 0x101E: return types::PropertyType::PtypMultipleString8     ;
+            case 0x1040: return types::PropertyType::PtypMultipleTime        ;
+            case 0x1048: return types::PropertyType::PtypMultipleGuid        ;
+            case 0x1102: return types::PropertyType::PtypMultipleBinary      ;
+            case 0x0000: return types::PropertyType::PtypUnspecified         ;
+            case 0x0001: return types::PropertyType::PtypNull                ;
+            case 0x000D: return types::PropertyType::PtypObject              ;
+            default:
+                ASSERT(false, "Unknown Property Type");
+                return types::PropertyType::PtypNull;
+            }
+        }
+
+        template<typename T>
+        const char* PropertyTypeChar(T id)
+        {
+            switch ((size_t)id)
+            {
+            case 0x0002: return "PtypInteger16;           ";
+            case 0x0003: return "PtypInteger32;           ";
+            case 0x0004: return "PtypFloating32;          ";
+            case 0x0005: return "PtypFloating64;          ";
+            case 0x0006: return "PtypCurrency;            ";
+            case 0x0007: return "PtypFloatingTime;        ";
+            case 0x000A: return "PtypErrorCode;           ";
+            case 0x000B: return "PtypBoolean;             ";
+            case 0x0014: return "PtypInteger64;           ";
+            case 0x001F: return "PtypString;              ";
+            case 0x001E: return "PtypString8;             ";
+            case 0x0040: return "PtypTime;                ";
+            case 0x0048: return "PtypGuid;                ";
+            case 0x00FB: return "PtypServerId;            ";
+            case 0x00FD: return "PtypRestriction;         ";
+            case 0x00FE: return "PtypRuleAction;          ";
+            case 0x0102: return "PtypBinary;              ";
+            case 0x1002: return "PtypMultipleInteger16;   ";
+            case 0x1003: return "PtypMultipleInteger32;   ";
+            case 0x1004: return "PtypMultipleFloating32;  ";
+            case 0x1005: return "PtypMultipleFloating64;  ";
+            case 0x1006: return "PtypMultipleCurrency;    ";
+            case 0x1007: return "PtypMultipleFloatingTime;";
+            case 0x1014: return "PtypMultipleInteger64;   ";
+            case 0x101F: return "PtypMultipleString;      ";
+            case 0x101E: return "PtypMultipleString8;     ";
+            case 0x1040: return "PtypMultipleTime;        ";
+            case 0x1048: return "PtypMultipleGuid;        ";
+            case 0x1102: return "PtypMultipleBinary;      ";
+            case 0x0000: return "PtypUnspecified;         ";
+            case 0x0001: return "PtypNull;                ";
+            case 0x000D: return "PtypObject;              ";
+            default:
+                ASSERT(false, "Unknown Property Type");
+                return "Unknown Property Type";
             }
         }
 
