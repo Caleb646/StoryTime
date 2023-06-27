@@ -102,12 +102,28 @@ namespace reader {
 
         void log(int lineNumber, const char* fmt, ...)
         {
-            char buffer[1000]{};
+            //char buffer[1000]{};
             va_list vararglist;
             va_start(vararglist, fmt);
             vprintf(fmt, vararglist);
             va_end(vararglist);
             printf(" at line [%i]\n", lineNumber);
+        }
+
+        template<typename To, typename From>
+        To cast(From f)
+        {
+            To res = static_cast<To>(f);
+            if constexpr (std::is_integral_v<From> && std::is_integral_v<To>)
+            {
+                ASSERT(std::cmp_equal(res, f), "[ERROR] Invalid Cast");
+                return res;
+            }  
+            else
+            {
+                static_assert(sizeof(From) <= sizeof(To), "[ERROR] Invalid Cast");
+                return res;
+            }    
         }
 
         template<typename T>
@@ -271,47 +287,86 @@ namespace reader {
             }
         }
 
-        template<typename T>
-        std::pair<int64_t, int64_t> PropertyTypeSize(T id)
+        struct PTInfo
         {
-            static_assert(sizeof(id) >= sizeof(types::PropertyType), "PropertyID is larger than the passed type");
-            switch (static_cast<types::PropertyType>(id))
+            bool isMv{};
+            bool isFixed{};
+            // size in bytes
+            size_t singleEntrySize{};
+        };
+
+        template<typename T>
+        PTInfo PropertyTypeInfo(T id)
+        {
+            switch (cast<types::PropertyType>(id))
             {
-                case types::PropertyType::PtypInteger16              : return { 2, 0 }; // fixed length and only a single 2 byte entry
-                case types::PropertyType::PtypInteger32              : return { 4, 0 };
-                case types::PropertyType::PtypFloating32             : return {4, 0};
-                case types::PropertyType::PtypFloating64             : return {8, 0};
-                case types::PropertyType::PtypCurrency               : return {8, 0};
-                case types::PropertyType::PtypFloatingTime           : return {8, 0};
-                case types::PropertyType::PtypErrorCode              : return {4, 0};
-                case types::PropertyType::PtypBoolean                : return {1, 0};
-                case types::PropertyType::PtypInteger64              : return {8, 0};
-                case types::PropertyType::PtypString                 : return {-1, 2}; // Null terminated & variable length structure with a fixed entry size of 2 bytes
-                case types::PropertyType::PtypString8                : return {-1, 0}; // Null terminated & variable length structure and only a single n byte entry
-                case types::PropertyType::PtypTime                   : return { 8, 0 };
-                case types::PropertyType::PtypGuid                   : return {16, 0};
-                case types::PropertyType::PtypServerId               : return {-1, 0}; // variable length structure and only a single n byte entry
-                case types::PropertyType::PtypRestriction            : return {-1, 1}; 
-                case types::PropertyType::PtypRuleAction             : return {-1, -1}; // variable structure size and variable entry size
-                case types::PropertyType::PtypBinary                 : return {-1, 0};
-                case types::PropertyType::PtypMultipleInteger16      : return {-1, 2}; // variable structure size and a fixed entry size of 2 bytes
-                case types::PropertyType::PtypMultipleInteger32      : return {-1, 4};
-                case types::PropertyType::PtypMultipleFloating32     : return {-1, 4};
-                case types::PropertyType::PtypMultipleFloating64     : return {-1, 8};
-                case types::PropertyType::PtypMultipleCurrency       : return {-1, 8};
-                case types::PropertyType::PtypMultipleFloatingTime   : return {-1, 8};
-                case types::PropertyType::PtypMultipleInteger64      : return {-1, 8};
-                case types::PropertyType::PtypMultipleString         : return {-1, -1};
-                case types::PropertyType::PtypMultipleString8        : return {-1, -1};
-                case types::PropertyType::PtypMultipleTime           : return {-1, -1};
-                case types::PropertyType::PtypMultipleGuid           : return {-1, -1};
-                case types::PropertyType::PtypMultipleBinary         : return {-1, -1};
-                case types::PropertyType::PtypUnspecified            : return {-1, -1};
-                case types::PropertyType::PtypNull                   : return {-1, 0};
-                case types::PropertyType::PtypObject: return { -1, 0 };
+                case types::PropertyType::PtypInteger16              : return PTInfo{ false, true, 2 }; // fixed length and only a single 2 byte entry
+                case types::PropertyType::PtypInteger32              : return PTInfo{ false, true, 4 };
+                case types::PropertyType::PtypFloating32             : return PTInfo{ false, true, 4 };
+                case types::PropertyType::PtypFloating64             : return PTInfo{ false, true, 8 };
+                case types::PropertyType::PtypCurrency               : return PTInfo{ false, true, 8 };
+                case types::PropertyType::PtypFloatingTime           : return PTInfo{ false, true, 8 };
+                case types::PropertyType::PtypErrorCode              : return PTInfo{ false, true, 4 };
+                case types::PropertyType::PtypBoolean                : return PTInfo{ false, true, 1 };
+                case types::PropertyType::PtypInteger64              : return PTInfo{ false, true, 8 };
+                case types::PropertyType::PtypString                 : return PTInfo{ false, false, 2 }; // Null terminated & variable length structure with a fixed entry size of 2 bytes
+                
+                case types::PropertyType::PtypString8: 
+                    ASSERT(false, "PtypString8 is not implemented yet");
+                    return PTInfo{ false, false, 64 }; // Null terminated & variable length structure and only a single n byte entry
+                
+                case types::PropertyType::PtypTime                   : return PTInfo{ false, true, 8 };
+                case types::PropertyType::PtypGuid                   : return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypServerId:
+                    ASSERT(false, "PtypServerId is not implemented yet");
+                    return PTInfo{ false, true, 16 }; // variable length structure and only a single n byte entry
+                
+                case types::PropertyType::PtypRestriction: 
+                    ASSERT(false, "PtypRestriction is not implemented yet");
+                    return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypRuleAction: 
+                    ASSERT(false, "PtypRuleAction is not implemented yet");
+                    return PTInfo{ false, true, 16 }; // variable structure size and variable entry size
+                
+                case types::PropertyType::PtypBinary                 : return PTInfo{ false, false, 0 };
+                case types::PropertyType::PtypMultipleInteger16      : return PTInfo{ true, true, 2 }; // variable structure size and a fixed entry size of 2 bytes
+                case types::PropertyType::PtypMultipleInteger32      : return PTInfo{ true, true, 4 };
+                case types::PropertyType::PtypMultipleFloating32     : return PTInfo{ true, true, 4 };
+                case types::PropertyType::PtypMultipleFloating64     : return PTInfo{ true, true, 8 };
+                case types::PropertyType::PtypMultipleCurrency       : return PTInfo{ true, true, 8 };
+                case types::PropertyType::PtypMultipleFloatingTime   : return PTInfo{ true, true, 8 };
+                case types::PropertyType::PtypMultipleInteger64      : return PTInfo{ true, true, 8 };
+                case types::PropertyType::PtypMultipleString         : return PTInfo{ true, true, 2 };
+                
+                case types::PropertyType::PtypMultipleString8: 
+                    ASSERT(false, "PtypMultipleString8 is not implemented yet");
+                    return PTInfo{ true, false, 0 };
+                
+                case types::PropertyType::PtypMultipleTime:
+                    ASSERT(false, "PtypMultipleTime is not implemented yet");
+                    return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypMultipleGuid: 
+                    ASSERT(false, "PtypMultipleGuid is not implemented yet");
+                    return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypMultipleBinary         : return PTInfo{ true, false, 0 };
+                
+                case types::PropertyType::PtypUnspecified:
+                    ASSERT(false, "PtypUnspecified is not implemented yet");
+                    return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypNull: 
+                    ASSERT(false, "PtypNull is not implemented yet");
+                    return PTInfo{ false, true, 16 };
+                
+                case types::PropertyType::PtypObject                 : return PTInfo{ false, false, 0 };
+               
                 default: 
                     ASSERT(false, "Unknown Property Type");
-                    return { 0, 0 };
+                    return PTInfo{ false, false, 0 };
             }
         }
 
@@ -397,6 +452,24 @@ namespace reader {
             default:
                 ASSERT(false, "Unknown Property Type");
                 return "Unknown Property Type";
+            }
+        }
+
+        types::PidTagType PidTagType(uint32_t id)
+        {
+            switch (id)
+            {
+                case 0x0FF9: return types::PidTagType::RecordKey;
+                case 0x3001: return types::PidTagType::DisplayName;
+                case 0x35E0: return types::PidTagType::IpmSubTreeEntryId;
+                case 0x35E3: return types::PidTagType::IpmWastebasketEntryId;
+                case 0x35E7: return types::PidTagType::FinderEntryId;
+                case 0x3602: return types::PidTagType::PidTagContentCount;
+                case 0x3603: return types::PidTagType::PidTagContentUnreadCount;
+                case 0x360A: return types::PidTagType::PidTagSubfolders;
+                default:
+                    ASSERT(false, "Invalid PidTagType");
+                    return types::PidTagType::Unknown;
             }
         }
 
@@ -509,8 +582,11 @@ namespace reader {
                         static_cast<T>(bytes[0])
                         );
             }
-            ASSERT(false, "[ERROR] [bytes] &s vector can only be of size 2 to 4.", toHexString(bytes).c_str());
-            return -1;
+            else 
+            {
+                ASSERT(false, "[ERROR] [bytes] &s vector can only be of size 2 to 4.", toHexString(bytes).c_str());
+                return T(-1);
+            }
         }
 
         bool isEqual(std::vector<types::byte_t> a, std::vector<types::byte_t> b, std::string name = "NOT SET", bool shouldFail = true)
@@ -555,6 +631,18 @@ namespace reader {
 			}
 			return bytes;
 		}
+
+        template<size_t Size>
+        std::array<types::byte_t, Size> toArray(const std::vector<types::byte_t>& v)
+        {
+            ASSERT((v.size() == Size), "[ERROR] Invalid array size [%i] != [%i]", v.size(), Size);
+            std::array<types::byte_t, Size> result;
+            for(size_t i = 0; i < v.size(); ++i)
+			{
+				result[i] = v[i];
+			}
+            return result;
+        }
 
         template<typename T>
         std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)

@@ -191,9 +191,11 @@ namespace reader {
 
 				else if constexpr (E::id() == NBTEntry::id())
 					return asNBTEntry();
-
-				ASSERT(false, "[ERROR] Invalid Type");
-                return E();
+                else
+                {
+                    ASSERT(false, "[ERROR] Invalid Type");
+                    return E();
+                }
 			}
 
             size_t size() const { return m_data.size(); }
@@ -299,8 +301,11 @@ namespace reader {
                     return hasBBTEntries();
                 else if constexpr (EntryType::id() == NBTEntry::id())
                     return hasNBTEntries();
-				ASSERT(false, "[ERROR] Invalid EntryType");
-                return false;
+                else
+                {
+                    ASSERT(false, "[ERROR] Invalid EntryType");
+                    return false;
+                }
 			}
 
             bool verify() const
@@ -389,17 +394,15 @@ namespace reader {
                 page.cLevel = cLevel;
                 page.dwPadding = dwPadding;
                 page.pageTrailer = pageTrailer;
-                page.rgentries = BTPage::readEntries(rgentriesBytes, pageTrailer.ptype, cEnt, cbEnt, cEntMax, cLevel);
+                page.rgentries = BTPage::readEntries(rgentriesBytes, cEnt, cbEnt, cEntMax);
                 return page;
             }
 
             static std::vector<Entry> readEntries(
                 const std::vector<types::byte_t>& entriesInBytes,
-                types::PType pageType,
                 int64_t numEntries,
                 int64_t singleEntrySize,
-                int64_t maxNumberofEntries,
-                int64_t cLevel
+                int64_t maxNumberofEntries
             )
             {
 
@@ -424,7 +427,7 @@ namespace reader {
                     */
                     entries.push_back(Entry(entryBytes));
                 }
-                ASSERT((entries.size() == numEntries), "[ERROR] Invalid number of entries %i", entries.size());
+                ASSERT((std::cmp_equal(entries.size(), numEntries)), "[ERROR] Invalid number of entries %i", entries.size());
                 return entries;
             }
 
@@ -487,13 +490,13 @@ namespace reader {
                 {
                     types::PType ptype = pageTrailer.ptype;
                     ASSERT((page.pageTrailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
-                    ASSERT((page.cEnt == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
-                    ASSERT((page.getEntryType() != -1), "[ERROR] Subpage has invalid entry type.");
+                    ASSERT(std::cmp_equal(page.cEnt, page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
+                    ASSERT(std::cmp_not_equal(page.getEntryType(), -1), "[ERROR] Subpage has invalid entry type.");
                     int entryIdx{ 0 };
                     for (size_t i = 0; i < page.rgentries.size(); i++)
                     {
                         const Entry& entry = page.rgentries.at(i);
-                        ASSERT((entry.size() == page.cbEnt), "[ERROR] Entry Size mismatch");
+                        ASSERT(std::cmp_equal(entry.size(), page.cbEnt), "[ERROR] Entry Size mismatch");
                         entryIdx++;
                     }
                     return true;
@@ -644,6 +647,30 @@ namespace reader {
 				return true;
 			}
 
+            std::vector<NBTEntry> all(core::NID nid)
+            {
+                std::vector<NBTEntry> entries{};
+                for (size_t i = 0; i < m_pages.size(); i++)
+                {
+                    const BTPage& page = m_pages.at(i);
+                    if (page.has<NBTEntry>())
+                    {
+                        for (size_t j = 0; j < page.rgentries.size(); j++)
+                        {
+                            NBTEntry entry = page.rgentries.at(j).as<NBTEntry>();
+                            // NID Index is used because a single PST Folder has 4 parts and those 4 parts
+                            // have the same NID Index but different NID Types. The == operator for NID class compares
+                            // the NID Type and NID Index.
+                            if (entry.nid.getNIDIndex() == nid.getNIDIndex())
+                            {
+                                    entries.push_back(entry);
+                            }
+                        }
+                    }
+                }
+                return entries;
+            }
+
             template<typename NIDorBID>
             LeafEntryType get(NIDorBID id)
             {
@@ -683,7 +710,7 @@ namespace reader {
             template<typename NIDorBID>
             uint32_t count(NIDorBID id)
             {
-                bool t = std::is_same_v<NIDorBID, core::NID>;
+                //bool t = std::is_same_v<NIDorBID, core::NID>;
                 //if constexpr (std::is_same_v<NIDorBID, core::NID> == true)
                 //    static_assert(std::is_same_v<LeafEntryType, NBTEntry> == true, "NID can only be used with Node BTree");
                 //else if constexpr (std::is_same_v<NIDorBID, core::BID> == true)
@@ -767,6 +794,11 @@ namespace reader {
             {
                 _init();
             }
+
+            std::vector<NBTEntry> all(core::NID nid)
+			{
+				return m_rootNBT.all(nid);
+			}
 
             template<typename NIDorBID>
             auto get(NIDorBID id)
@@ -933,17 +965,12 @@ namespace reader {
             void _buildBTree(BTree<LeafEntryType>& btree)
             {
                 types::PType rootPagePType = btree.ptype();
-                int64_t rootPageCLevel = btree.cLevel();
 
                 size_t idxProcessing = 0;
                 int maxIter = 1000;
                 while (idxProcessing < btree.size() && --maxIter > 0)
                 {
                     const BTPage& currentPage = btree.at(idxProcessing);
-                    if (idxProcessing >= 625)
-                    {
-                        int temp = 0;
-                    }
                     if (currentPage.hasBTEntries())
                     {
                         for(size_t i = 0; i < currentPage.rgentries.size(); i++)
@@ -1003,12 +1030,12 @@ namespace reader {
 
             DataBlock _readDataBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize)
             {
-                ASSERT((blockBytes.size() == blockSize), "[ERROR] blockBytes.size() != blockSize");
+                ASSERT(std::cmp_equal(blockBytes.size(), blockSize), "[ERROR] blockBytes.size() != blockSize");
                 std::vector<types::byte_t> data = utils::slice(blockBytes, 0ll, trailer.cb, trailer.cb);
-                ASSERT((data.size() == trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
+                ASSERT(std::cmp_equal(data.size(), trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
 
                 size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
-                ASSERT((trailer.dwCRC == dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
+                ASSERT(std::cmp_equal(trailer.dwCRC, dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
 
                 // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
                 utils::ms::CryptPermute(

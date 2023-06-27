@@ -234,7 +234,7 @@ int main()
 	{
 		odd = 1;
 		even = 2;
-		for (const Entry& e : page.rgentries)
+		for ( [[maybe_unused]] const Entry& e : page.rgentries)
 		{
 			const NBTEntry& nbt = nodes.get(NID(odd));
 			const BBTEntry& bbt = blocks.get(nbt.bidData);

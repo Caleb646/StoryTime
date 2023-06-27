@@ -146,7 +146,7 @@ namespace reader {
 		struct HNBitMapHDR
 		{
 			/// (2 bytes): The byte offset to the HNPAGEMAP record (section 2.3.1.5) relative to the beginning of the HNPAGEHDR structure. 
-			int16_t ibHnpm{};
+			uint16_t ibHnpm{};
 			/// (64 bytes): Per-block Fill Level Map. This array consists of one hundred and twentyeight (128) 4-bit values 
 			/// that indicate the fill level for the next 128 data blocks (including this data block). 
 			/// If the HN has fewer than 128 data blocks after this data block, then the values corresponding to the 
@@ -363,29 +363,6 @@ namespace reader {
 		 * Accessing the PC BTHHEADER 
 		 * The BTHHEADER structure of a PC is accessed through the hidUserRoot of the HNHDR structure of the containing HN.
 		*/
-
-
-		/**
-		 * @brief When the MV property contains variable-size elements, 
-		 * such as PtypBinary, PtypString, or PtypString8), the data layout 
-		 * is more complex. The following is the data format of a multi-valued 
-		 * property with variable-size base type. 
-		*/
-		struct VariableSizeMVProperty
-		{
-			/// (4 bytes): Number of data items in the array. 
-			int64_t ulCount{};
-			/// (variable): An array of ULONG values that represent offsets to 
-			/// the start of each data item for the MV array. Offsets are relative 
-			/// to the beginning of the MV property data record. The length of the 
-			/// Nth data item is calculated as: rgulDataOffsets[N+1] – rgulDataOffsets[N], 
-			/// with the exception of the last item, in which the total size of the 
-			/// MV property data record is used instead of rgulDataOffsets[N+1].
-			std::vector<types::byte_t> rgulDataOffsets{};
-			/// (variable): A byte-aligned array of data items. Individual items are delineated 
-			/// using the rgulDataOffsets values. 
-			std::vector<types::byte_t> rgDataItems{};
-		};
 
 		/**
 		 * @brief When a property of type PtypObject is stored in a PC, the dwValueHnid value 
@@ -739,7 +716,7 @@ namespace reader {
 			{
 				ASSERT((bytes.size() == 66), "[ERROR] Invalid size");
 				HNBitMapHDR hdr{};
-				hdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<int32_t>);
+				hdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint16_t>);
 
 				std::vector<types::byte_t> fillBytes = utils::slice(bytes, 2, 66, 64);
 				for (size_t i = 0; i < fillBytes.size(); i++)
@@ -785,7 +762,7 @@ namespace reader {
 			static std::vector<Record> readBTHRecords(
 				const std::vector<types::byte_t>& bytes,
 				size_t keySize,
-				size_t bIdxLevels,
+				//size_t bIdxLevels,
 				size_t dataSize = 0)
 			{
 				size_t rsize = keySize + dataSize;
@@ -836,7 +813,7 @@ namespace reader {
 				m_records = readBTHRecords(
 					m_hn.alloc(m_header.hidRoot),
 					m_header.cbKey,
-					m_header.bIdxLevels,
+					//m_header.bIdxLevels,
 					m_header.cbEnt
 				);
 			}
@@ -846,54 +823,183 @@ namespace reader {
 			std::vector<Record> m_records;
 		};
 
-		struct Property
+		/**
+		 * @brief When the MV property contains variable-size elements,
+		 * such as PtypBinary, PtypString, or PtypString8), the data layout
+		 * is more complex. The following is the data format of a multi-valued
+		 * property with variable-size base type.
+		*/
+		struct PTMultiValue
 		{
-			types::PropertyType propType{types::PropertyType::PtypNull};
-			int64_t propEntrySize{0};
+			/// (4 bytes): Number of data items in the array.
+			uint32_t ulCount{};
+			/// (variable): An array of ULONG values that represent offsets to the start of each
+			/// data item for the MV array.Offsets are relative to the beginning of the MV property data record.
+		    ///	The length of the Nth data item is calculated as : rgulDataOffsets[N + 1] – rgulDataOffsets[N],
+			///	with the exception of the last item, in which the total size of the MV property data record is used
+			///	instead of rgulDataOffsets[N + 1].
+			/// Contains ulCount + 1 offsets because I add data.size() as the last offset
+			std::vector<uint32_t> rgulDataOffsets{};
+			/// (variable): A byte-aligned array of data items. Individual items are delineated using
+			/// the rgulDataOffsets values.
+			std::vector<types::byte_t> rgDataItems{};
+
+			static PTMultiValue readPTMV(const std::vector<types::byte_t>& data)
+			{
+				PTMultiValue mv{};
+				mv.ulCount = utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>);
+				
+				size_t offsetSize = mv.ulCount * sizeof(uint32_t);
+				std::vector<types::byte_t> offsetBytes = utils::slice(data, 4ull, 4ull + offsetSize, offsetSize);
+				for(uint32_t i = 0; i < mv.ulCount; i += sizeof(uint32_t))
+				{
+					uint32_t offset = utils::slice(offsetBytes, static_cast<size_t>(i), i + sizeof(uint32_t), sizeof(uint32_t), utils::toT_l<uint32_t>);
+					mv.rgulDataOffsets.push_back(offset);
+				}
+				mv.rgulDataOffsets.push_back(utils::cast<uint32_t>(data.size()));
+
+				/// Contains ulCount + 1 offsets because I add data.size() as the last offset
+				ASSERT(std::cmp_equal(mv.ulCount + 1, mv.rgulDataOffsets.size()), "[ERROR] Invalid size");
+				ASSERT(std::cmp_greater(data.size(), 4ull + offsetSize), "[ERROR] Invalid size");
+
+				size_t dataSize = data.size() - (4ull + offsetSize);
+				mv.rgDataItems = utils::slice(
+					data, 
+					4ull + offsetSize,
+					data.size(),
+					dataSize
+				);
+				ASSERT(std::cmp_equal(mv.ulCount, mv.rgDataItems.size()), "[ERROR] Invalid size");
+				return mv;
+			}
+		};
+
+		struct PTBinary 
+		{
+			uint32_t id{};
 			std::vector<types::byte_t> data{};
+		};
+
+		struct PTString
+		{
+			uint32_t id{};
+			std::string data{};
+		};
+
+		class Property
+		{
+		public:
+			uint32_t id{};
+			types::PropertyType propType{ types::PropertyType::PtypNull };
+			utils::PTInfo info{};
+			std::vector<types::byte_t> data{};
+
+		public:
+			PTBinary asPTBinary() const
+			{
+				ASSERT(!info.isMv, "[ERROR] Property is not a PTBinary");
+				ASSERT(!info.isFixed, "[ERROR] Property is not a PTBinary");
+				ASSERT(std::cmp_equal(info.singleEntrySize, 0ull), "[ERROR] Property is not a PTBinary");
+				PTBinary bin{};
+				bin.id = id;
+				bin.data = data;
+				return bin;
+			}
+
+			PTString asPTString() const
+			{
+
+				ASSERT(!info.isMv, "[ERROR] Property is not a PTString");
+				ASSERT(!info.isFixed, "[ERROR] Property is not a PTString");
+				ASSERT(std::cmp_equal(info.singleEntrySize, 2ull), "[ERROR] Property is not a PTString");
+				ASSERT(std::cmp_equal(data.size() % 2ull, 0ull), "[ERROR] Property is not a PTString");
+				ASSERT(std::cmp_greater(data.size(), 0ull), "[ERROR] Property is not a PTString");
+
+				std::vector<types::utf8_t> characters{};
+				for(uint32_t i = 0; i < data.size() / 2ull; ++i)
+				{
+					uint32_t start = utils::cast<uint32_t>(i * info.singleEntrySize);
+					uint32_t end = utils::cast<uint32_t>(start + info.singleEntrySize);
+					// TODO: For now this just takes the most significant byte and converts it to utf8
+					types::utf16le_t character = utils::slice(data, start, end, end - start, utils::toT_l<types::utf16le_t>);
+					characters.push_back(utils::cast<types::utf8_t>(character & 0xFF));
+				}
+				PTString str{};
+				str.id = id;
+				str.data = std::string(characters.begin(), characters.end());
+				return str;
+			}
+
+			template<typename PropType>
+			PropType as() const
+			{
+				if constexpr (std::is_same_v<PropType, PTBinary>)
+				{
+					return asPTBinary();
+				}
+				else if constexpr (std::is_same_v<PropType, PTString>)
+				{
+					return asPTString();
+				}
+				else
+				{
+					ASSERT(false, "[ERROR] Invalid Property Type");
+					return PropType{};
+				}
+			}	
 		};
 
 		class PropertyContext
 		{
 		public:
-			PropertyContext(const ndb::NDB& ndb, HN& hn)
+			PropertyContext() = default;
+			PropertyContext(ndb::NDB& ndb, HN& hn)
 				: m_hn(hn), m_bth(hn), m_ndb(ndb)
 			{
 				_init();
 			}
 
+			auto begin()
+			{
+				return m_properties.begin();
+			}
+
+			auto end()
+			{
+				return m_properties.end();
+			}
+
 			std::vector<Property> readProperties()
 			{
-				std::vector<Property> properties{};
 				for (const auto& record : m_records)
 				{
 					
-					auto [propSize, propEntrySize] = utils::PropertyTypeSize(record.wPropType);
-					bool fixed = true ? propSize != -1 : false;
+					utils::PTInfo info = utils::PropertyTypeInfo(record.wPropType);
 
 					Property prop{};
+					prop.id = record.wPropId;
 					prop.propType = utils::PropertyType(record.wPropType);
-					prop.propEntrySize = propEntrySize;
+					prop.info = info;
 
-					if (fixed && propSize <= 4) // Data Value
+					if (info.isFixed && info.singleEntrySize <= 4) // Data Value
 					{
 						prop.data = record.dwValueHnid;
-						properties.push_back(prop);
+						m_properties.push_back(prop);
 					}
 															// check if HID 
-					else if ( (fixed && propSize > 4) || (record.dwValueHnid[0] & 0x1F) == 0) // HID
+					else if ( (info.isFixed && info.singleEntrySize > 4) || (record.dwValueHnid[0] & 0x1F) == 0) // HID
 					{
 						HID id = HID(record.dwValueHnid);
 						prop.data = m_hn.alloc(id);
-						properties.push_back(prop);
+						m_properties.push_back(prop);
 					}
 					else // NID
 					{
-						ASSERT(false, "[ERROR] Invalid Property");
+						ASSERT(false, "[ERROR] NID not implemented yet");
 					}
 				}
-				ASSERT((properties.size() == m_records.size()), "[ERROR] Invalid size");
-				return properties;
+				ASSERT((m_properties.size() == m_records.size()), "[ERROR] Invalid size");
+				return m_properties;
 			}
 
 		private:
@@ -910,9 +1016,10 @@ namespace reader {
 			}
 		private:
 			std::vector<PCBTHRecord> m_records{};
+			std::vector<Property> m_properties{};
 			BTreeHeap m_bth;
 			HN m_hn;
-			const ndb::NDB& m_ndb;
+			ndb::NDB& m_ndb;
 		};
 
 		class LTP
@@ -931,11 +1038,11 @@ namespace reader {
 				ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
 				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
 				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				HN hn = _readHN(dataTree, nbtentry);
+				HN hn = readHN(dataTree, nbtentry);
 				PropertyContext pc(m_ndb, hn);
 			}
 
-			HN _readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
+			static HN readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
 			{
 				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
 				HN hn(tree.dataBlocks.at(0).data, entry, tree.dataBlocks.size());

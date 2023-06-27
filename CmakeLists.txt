@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.21)
 
 project(pst_reader VERSION 0.1.0)
 
@@ -9,12 +9,43 @@ enable_testing()
 set (CMAKE_CXX_STANDARD 20)
 set (SRC_FILES "src/main.cpp")
 
+set(MSVC_WARNINGS
+    "/W4" # Baseline reasonable warnings
+    "/w14242" # 'identifier': conversion from 'type1' to 'type1', possible loss of data
+    "/w14254" # 'operator': conversion from 'type1:field_bits' to 'type2:field_bits', possible loss of data
+    "/w14263" # 'function': member function does not override any base class virtual member function
+    "/w14265" # 'classname': class has virtual functions, but destructor is not virtual instances of this class may not
+                # be destructed correctly
+    "/w14287" # 'operator': unsigned/negative constant mismatch
+    "/we4289" # nonstandard extension used: 'variable': loop control variable declared in the for-loop is used outside
+                # the for-loop scope
+    "/w14296" # 'operator': expression is always 'boolean_value'
+    "/w14311" # 'variable': pointer truncation from 'type1' to 'type2'
+    "/w14545" # expression before comma evaluates to a function which is missing an argument list
+    "/w14546" # function call before comma missing argument list
+    "/w14547" # 'operator': operator before comma has no effect; expected operator with side-effect
+    "/w14549" # 'operator': operator before comma has no effect; did you intend 'operator'?
+    "/w14555" # expression has no effect; expected expression with side- effect
+    "/w14619" # pragma warning: there is no warning number 'number'
+    "/w14640" # enable warning on thread un-safe static member initialization
+    "/w14826" # conversion from 'type1' to 'type_2' is sign-extended. this may cause unexpected runtime behavior.
+    "/w14905" # wide string literal cast to 'lpstr'
+    "/w14906" # string literal cast to 'lpwstr'
+    "/w14928" # illegal copy-initialization; more than one user-defined conversion has been implicitly applied
+    "/permissive-" # standards conformance mode for msvc compiler.
+    #"/wx" # treat warnings as errors
+)
+
+
 
 add_executable(pst_reader ${SRC_FILES} "src/main.cpp")
+target_compile_options(pst_reader PUBLIC ${MSVC_WARNINGS})
+# target_compile_options(pst_reader PUBLIC INTERFACE $<$<COMPILE_LANGUAGE:CXX>:${MSVC_WARNINGS}>)
+# target_compile_options(pst_reader PUBLIC /W4)
 
-#set (SRC_FILES "test.cpp")
-add_executable(tests "src/test.cpp")
 
+#add_executable(tests "src/test.cpp")
+#target_compile_options(tests PUBLIC ${MSVC_WARNINGS})
 
 
 target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

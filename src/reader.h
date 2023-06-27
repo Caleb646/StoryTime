@@ -9,6 +9,7 @@
 #include "core.h"
 #include "NDB.h"
 #include "LTP.h"
+#include "Messaging.h"
 
 #ifndef PST_READER_H
 #define PST_READER_H
@@ -32,6 +33,7 @@ namespace reader
             _open(m_path);
             ndb::NDB ndb(m_file, _readHeader(m_file));
             ltp::LTP ltp(ndb);
+            msg::Messaging msg(ltp, ndb);
         }
 
     private:
@@ -110,12 +112,12 @@ namespace reader
             return myRoot;
         }
 
-        core::Header _readHeader(const std::ifstream& file)
+        core::Header _readHeader(std::ifstream& file)
         {
-            ASSERT((m_file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
-            m_file.seekg(0);
-            ASSERT((m_file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
-            std::vector<types::byte_t> bytes = utils::readBytes(m_file, 564);
+            ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            file.seekg(0);
+            ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            std::vector<types::byte_t> bytes = utils::readBytes(file, 564);
 
             /**
              * dwMagic (4 bytes): MUST be "{ 0x21, 0x42, 0x44, 0x4E } ("!BDN")". 
@@ -167,31 +169,31 @@ namespace reader
             /* dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
              */
-            std::int32_t dwReserved1 = utils::slice(bytes, 16, 20, 4, utils::toT_l<std::int32_t>);
+            utils::slice(bytes, 16, 20, 4, utils::toT_l<std::int32_t>);
 
             /* dwReserved2 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
             */
-            std::int32_t dwReserved2 = utils::slice(bytes, 20, 24, 4, utils::toT_l<std::int32_t>);
+            utils::slice(bytes, 20, 24, 4, utils::toT_l<std::int32_t>);
 
             /*
             * bidUnused (8 bytes Unicode only): Unused padding added when the Unicode PST file format was created. 
             */
-            std::int64_t bidUnused = utils::slice(bytes, 24, 32, 8, utils::toT_l<std::int64_t>);
+            utils::slice(bytes, 24, 32, 8, utils::toT_l<std::int64_t>);
 
             /*
             * bidNextP (Unicode: 8 bytes; ANSI: 4 bytes): Next page BID. 
             *   Pages have a special counter for allocating bidIndex values. 
             *   The value of bidIndex for BIDs for pages is allocated from this counter. 
             */
-            std::int64_t bidNextP = utils::slice(bytes, 32, 40, 8, utils::toT_l<std::int64_t>);
+            utils::slice(bytes, 32, 40, 8, utils::toT_l<std::int64_t>);
 
             /*
             * dwUnique (4 bytes): This is a monotonically-increasing value that is modified every time the 
             *  PST file's HEADER structure is modified. The function of this value is to provide a unique value, 
             *  and to ensure that the HEADER CRCs are different after each header modification.
             */
-            std::int64_t dwUnique = utils::slice(bytes, 40, 44, 4, utils::toT_l<std::int64_t>);
+            utils::slice(bytes, 40, 44, 4, utils::toT_l<std::int64_t>);
 
            /*
            * rgnid[] (128 bytes): A fixed array of 32 NIDs, each corresponding to one of the 
@@ -250,7 +252,8 @@ namespace reader
            /*
            * qwUnused (8 bytes): Unused space; MUST be set to zero. Unicode PST file format only. 
            */
-           std::int64_t qwUnused = utils::slice(bytes, 172, 180, 8, utils::toT_l<std::int64_t>);
+           utils::slice(bytes, 172, 180, 8, utils::toT_l<std::int64_t>);
+           //ASSERT(std::cmp_equal(qwUnused, 0), "[ERROR]")
 
            /*
            * root (Unicode: 72 bytes; ANSI: 40 bytes): A ROOT structure

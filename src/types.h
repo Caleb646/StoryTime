@@ -4,6 +4,8 @@
 namespace reader {
 	namespace types {
 		typedef unsigned char byte_t;
+        typedef uint16_t utf16le_t;
+        typedef unsigned char utf8_t;
 
         enum class PType
         {
@@ -118,6 +120,19 @@ namespace reader {
             PtypUnspecified             =   0x0000, /// Any: this property type value matches any type; a server MUST return the actual type in its response.Servers MUST NOT return this type in response to a client request other than NspiGetIDsFromNames or the RopGetPropertyIdsFromNames ROP request([MS - OXCROPS] section 2.2.8.1).
             PtypNull                    =   0x0001, /// None: This property is a placeholder.
             PtypObject                  =   0x000D, /// The property value is a Component Object Model(COM) object, as specified in section 2.11.1.5.
+        };
+
+        enum class PidTagType
+        {
+            RecordKey                 =   0x0FF9, // Record key. This is the Provider UID of this PST.
+            DisplayName               =   0x3001,
+            IpmSubTreeEntryId         =   0x35E0,
+            IpmWastebasketEntryId     =   0x35E3,
+            FinderEntryId             =   0x35E7,
+            PidTagContentCount        =   0x3602,
+            PidTagContentUnreadCount  =   0x3603,
+            PidTagSubfolders          =   0x360A,
+            Unknown
         };
 	}
 }
