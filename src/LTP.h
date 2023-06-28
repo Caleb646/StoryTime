@@ -5,6 +5,7 @@
 #include <string>
 #include <fstream>
 #include <utility>
+#include <algorithm>
 
 #include "types.h"
 #include "utils.h"
@@ -83,6 +84,11 @@ namespace reader {
 				ASSERT((m_data.size() == 4), "[ERROR]");
 			}
 
+			bool isHID() const
+			{
+				return (m_data[0] & 0x1F) == 0;
+			}
+
 			template<typename IDType>
 			IDType as() const
 			{
@@ -99,6 +105,7 @@ namespace reader {
 					return core::NID(m_data);
 				}
 			}
+			size_t static constexpr size() { return 4; }
 		private:
 			std::vector<types::byte_t> m_data{};
 		};
@@ -276,78 +283,6 @@ namespace reader {
 			static constexpr size_t id() { return 11; }
 		};
 
-		class Record
-		{
-		public:
-			Record(const std::vector<types::byte_t>& data, size_t keySize, size_t dataSize = 0)
-				: m_data(data), m_keySize(keySize), m_dataSize(dataSize) {}
-			
-			static IntermediateBTHRecord asIntermediateBTHRecord(
-				const std::vector<types::byte_t>& bytes, 
-				size_t keySize
-			)
-			{
-				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
-				IntermediateBTHRecord record{};
-				record.key = utils::slice(bytes, 0ull, keySize, keySize);
-				record.hidNextLevel = HID(utils::slice(
-					bytes,
-					keySize,
-					keySize + 4ull,
-					4ull
-				));
-				return record;
-			}
-
-			static LeafBTHRecord asLeafBTHRecord(
-				const std::vector<types::byte_t>& bytes, 
-				size_t keySize, 
-				size_t dataSize
-			)
-			{
-				ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
-				LeafBTHRecord record{};
-				record.key = utils::slice(bytes, 0ull, keySize, keySize);
-				record.data = utils::slice(bytes, keySize, keySize + dataSize, dataSize);
-				return record;
-			}
-
-			static PCBTHRecord asPCBTHRecord(
-				const std::vector<types::byte_t>& bytes,
-				size_t keySize,
-				size_t dataSize
-			)
-			{
-				ASSERT((bytes.size() == 8), "[ERROR]");
-				ASSERT((keySize == 2), "[ERROR]");
-				ASSERT((dataSize == 6), "[ERROR]");
-				PCBTHRecord record{};
-				record.wPropId = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
-				record.wPropType = utils::slice(bytes, 2, 4, 2, utils::toT_l<uint32_t>);
-				record.dwValueHnid = utils::slice(bytes, 4, 8, 4);
-				//record.dwValueHnid = HNID(utils::slice(bytes, 4, 8, 4));
-
-				ASSERT( ( utils::isIn(record.wPropType, utils::PROPERTY_TYPE_VALUES) ), "[ERROR] Invalid property type");
-				return record;
-			}
-
-			template<typename RecordType>
-			RecordType as() const
-			{
-				if constexpr(RecordType::id() == LeafBTHRecord::id())
-					return asLeafBTHRecord(m_data, m_keySize, m_dataSize);
-				else if constexpr(RecordType::id() == IntermediateBTHRecord::id())
-					return asIntermediateBTHRecord(m_data, m_keySize);
-				else if constexpr(RecordType::id() == PCBTHRecord::id())
-					return asPCBTHRecord(m_data, m_keySize, m_dataSize);
-				//static_assert(false, "Invalid record type");
-			}
-		private:
-			size_t m_keySize{};
-			size_t m_dataSize{};
-			std::vector<types::byte_t> m_data{};
-		};
-
 		/**
 		 * @brief = The Property Context is built directly on top of a BTH. 
 		 * The existence of a PC is indicated at the HN level, where bClientSig 
@@ -378,6 +313,36 @@ namespace reader {
 		};
 
 		/**
+		 * @brief The TCOLDESC structure describes a single column in the TC,
+		 * which includes metadata about the size of the data associated with this column,
+		 * as well as whether a column exists, and how to locate the column data from the Row Matrix.
+		*/
+		struct TColDesc
+		{
+			/// (4 bytes): This field specifies that 32-bit tag 
+			/// that is associated with the column. 
+			uint32_t tag{};
+			/// (2 bytes): Data Offset. This field indicates the offset 
+			/// from the beginning of the row data (in the Row Matrix) 
+			/// where the data for this column can be retrieved. Because 
+			/// each data row is laid out the same way in the Row Matrix, 
+			/// the Column data for each row can be found at the same offset.
+			uint16_t ibData{};
+			/// (1 byte): Data size. This field specifies the size of the data 
+			/// associated with this column (that is, "width" of the column), 
+			/// in bytes per row. However, in the case of variable-sized data, 
+			/// this value is set to the size of an HNID instead.
+			uint8_t cbData{};
+			/// (1 byte): Cell Existence Bitmap Index. This value is the 0-based 
+			/// index into the CEB bit that corresponds to this Column. A detailed 
+			/// explanation of the mapping mechanism will be discussed in section 2.3.4.4.1. 
+			uint8_t iBit{};
+
+			uint32_t propId() const noexcept { return tag & 0xFFFF0000; }
+			uint32_t propType() const noexcept { return tag & 0xFFFF; }
+		};
+
+		/**
 		 * @brief TCINFO is the header structure for the TC. The TCINFO is 
 		 * accessed using the hidUserRoot field in the HNHDR structure of 
 		 * the containing HN. The header contains the column definitions and other relevant data.
@@ -385,15 +350,15 @@ namespace reader {
 		struct TCInfo
 		{
 			/// (1 byte): TC signature; MUST be set to bTypeTC.
-			int16_t bType{};
+			types::BType bType{};
 			/// (1 byte): Column count. This specifies the number of columns in the TC.
-			int16_t cCols{};
+			uint8_t cCols{};
 			/// (8 bytes): This is an array of 4 16-bit values that specify the 
 			/// offsets of various groups of data in the actual row data. 
 			/// The application of this array is specified in section 2.3.4.4, 
 			/// which covers the data layout of the Row Matrix. The following 
 			/// table lists the meaning of each value: 
-			int64_t rgib{};
+			std::vector<uint16_t> rgib{};
 
 			/*
 			*	Index	Friendly name	Meaning of rgib[Index] value 
@@ -408,44 +373,26 @@ namespace reader {
 			/// associated with the row identified by the RowIndex, whose meaning depends on the higher 
 			/// level structure that implements this TC. The RowIndex is the zero-based index to a 
 			/// particular row in the Row Matrix. 
-			int64_t hidRowIndex{};
+			HID hidRowIndex{};
 			/// (4 bytes): HNID to the Row Matrix (that is, actual table data). 
 			/// This value is set to zero if the TC contains no rows. 
-			int64_t hnidRows{};
+			HNID hnidRows{};
 			///  (4 bytes): Deprecated. Implementations SHOULD ignore this value, 
 			/// and creators of a new PST MUST set this value to zero. 
-			int64_t hidIndex{};
+			uint32_t hidIndex{}; /// NOT USED
 			/// (variable): Array of Column Descriptors. This array contains cCols 
 			/// entries of type TCOLDESC structures that define each TC column. 
 			/// The entries in this array MUST be sorted by the tag field of TCOLDESC. 
-			std::vector<types::byte_t> rgTCOLDESC{};
-		};
+			std::vector<TColDesc> rgTCOLDESC{};
 
-		/**
-		 * @brief The TCOLDESC structure describes a single column in the TC, 
-		 * which includes metadata about the size of the data associated with this column, 
-		 * as well as whether a column exists, and how to locate the column data from the Row Matrix.
-		*/
-		struct TCOLDESC
-		{
-			/// (4 bytes): This field specifies that 32-bit tag 
-			/// that is associated with the column. 
-			int64_t tag{};
-			/// (2 bytes): Data Offset. This field indicates the offset 
-			/// from the beginning of the row data (in the Row Matrix) 
-			/// where the data for this column can be retrieved. Because 
-			/// each data row is laid out the same way in the Row Matrix, 
-			/// the Column data for each row can be found at the same offset.
-			int32_t ibData{};
-			/// (1 byte): Data size. This field specifies the size of the data 
-			/// associated with this column (that is, "width" of the column), 
-			/// in bytes per row. However, in the case of variable-sized data, 
-			/// this value is set to the size of an HNID instead.
-			int32_t cbData{};
-			/// (1 byte): Cell Existence Bitmap Index. This value is the 0-based 
-			/// index into the CEB bit that corresponds to this Column. A detailed 
-			/// explanation of the mapping mechanism will be discussed in section 2.3.4.4.1. 
-			int16_t iBit{};
+			/// Ending offset of 8- and 4-byte data value group.
+			constexpr static size_t TCI_4b = 0;
+			/// Ending offset of 2-byte data value group.
+			constexpr static size_t TCI_2b = 1;
+			/// Ending offset of 1-byte data value group.
+			constexpr static size_t TCI_1b = 2;
+			/// Ending offset of the Cell Existence Block.
+			constexpr static size_t TCI_bm = 3;
 		};
 
 		/**
@@ -458,10 +405,10 @@ namespace reader {
 		struct TCRowID
 		{
 			/// (4 bytes) : This is  the 32 - bit primary key value that uniquely identifies a row in the Row Matrix.
-			int64_t dwRowID{};
+			uint32_t dwRowID{};
 			/// (Unicode: 4 bytes): The 0-based index to the corresponding row 
 			/// in the Row Matrix. Note that for ANSI PSTs, the maximum number of rows is 2^16.
-			int64_t dwRowIndex{};
+			uint32_t dwRowIndex{};
 		};
 
 		/**
@@ -476,22 +423,29 @@ namespace reader {
 			5. For any other columns, iBit can change/be any valid value (other than 0 and 1)
 			6. For any other columns, ibData can be any valid value (other than 0 and 4) 
 		*/
-		struct RowData
+		class RowData
 		{
+		public:
+			TCInfo tcInfo{};
+
 			/// (4 bytes): The 32-bit value that corresponds to the dwRowID 
 			/// value in this row's corresponding TCROWID record. 
 			/// Note that this value corresponds to the PidTagLtpRowId property.
-			int64_t dwRowID{};
+			uint32_t dwRowID{};
+
 			/// (variable): 4-byte-aligned Column data. This region contains 
 			/// data with a size that is a multiple of 4 bytes. The types of 
 			/// data stored in this region are 4-byte and 8-byte values.
-			std::vector<types::byte_t> rgdwData{};
+			//std::vector<types::byte_t> rgdwData{};
+
 			/// (variable): 2-byte-aligned Column data. This region contains 
 			/// data that are 2 bytes in size. 
-			std::vector<types::byte_t> rgwData{};
+			//std::vector<types::byte_t> rgwData{};
+
 			/// (variable): Byte-aligned Column data. This region 
 			/// contains data that are byte-sized. 
-			std::vector<types::byte_t> rgbData{};
+			//std::vector<types::byte_t> rgbData{};
+
 			/// (variable): Cell Existence Block. This array of bits comprises the CEB, 
 			/// in which each bit corresponds to a particular Column in the current row. 
 			/// The mapping between CEB bits and actual Columns is based on the iBit 
@@ -510,6 +464,135 @@ namespace reader {
 			/// The size of rgCEB is CEIL(TCINFO.cCols / 8) bytes. Extra lower-order bits SHOULD be ignored. 
 			/// Creators of a new PST MUST set the extra lower-order bits to zero.
 			std::vector<types::byte_t> rgbCEB{};
+
+			/// Eeverything from the start of Row Data to the start of rgbCEB
+			std::vector<types::byte_t> data{};
+		public:
+			RowData(const std::vector<types::byte_t>& rowBytes, const TCInfo& header)
+			{
+				size_t offset4b = header.rgib.at(TCInfo::TCI_4b);
+				size_t offset2b = header.rgib.at(TCInfo::TCI_2b);
+				size_t offset1b = header.rgib.at(TCInfo::TCI_1b);
+				size_t totalRowSize = header.rgib.at(TCInfo::TCI_bm);
+
+				ASSERT((offset4b <= offset2b), "[ERROR]");
+				ASSERT((offset2b <= offset1b), "[ERROR]");
+				ASSERT((offset1b < totalRowSize), "[ERROR]");
+
+				tcInfo = header;
+				dwRowID = utils::slice(rowBytes, 0, 4, 4, utils::toT_l<uint32_t>);
+				// Read everything from the start of Row Data to the start of rgbCEB
+				data = utils::slice(rowBytes, 0ull, offset1b, offset1b);
+				//row.rgdwData = utils::slice(rowBytes, 4ull, offset4b, offset4b - 4);
+				//row.rgwData = utils::slice(rowBytes, offset4b, offset2b, offset2b - offset4b);
+				//row.rgbData = utils::slice(rowBytes, offset2b, offset1b, offset2b - offset1b);
+				rgbCEB = utils::slice(rowBytes, offset1b, totalRowSize, totalRowSize - offset1b);
+
+				//ASSERT((dwRowID == rowID.dwRowID), "[ERROR]");
+				ASSERT((rgbCEB.size() == static_cast<size_t>(std::ceil(static_cast<double>(header.cCols) / 8.0))), "[ERROR]");
+			}
+
+		public:
+
+			bool exists(uint8_t iBit) const
+			{
+				return (rgbCEB[iBit / 8] & (1 << (7 - (iBit % 8))));
+			}
+		};
+
+
+		class Record
+		{
+		public:
+			Record(const std::vector<types::byte_t>& data, size_t keySize, size_t dataSize = 0)
+				: m_data(data), m_keySize(keySize), m_dataSize(dataSize) {}
+
+			static IntermediateBTHRecord asIntermediateBTHRecord(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize
+			)
+			{
+				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
+				IntermediateBTHRecord record{};
+				record.key = utils::slice(bytes, 0ull, keySize, keySize);
+				record.hidNextLevel = HID(utils::slice(
+					bytes,
+					keySize,
+					keySize + 4ull,
+					4ull
+				));
+				return record;
+			}
+
+			static LeafBTHRecord asLeafBTHRecord(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize,
+				size_t dataSize
+			)
+			{
+				ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
+				LeafBTHRecord record{};
+				record.key = utils::slice(bytes, 0ull, keySize, keySize);
+				record.data = utils::slice(bytes, keySize, keySize + dataSize, dataSize);
+				return record;
+			}
+
+			static PCBTHRecord asPCBTHRecord(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize,
+				size_t dataSize
+			)
+			{
+				ASSERT((bytes.size() == 8), "[ERROR]");
+				ASSERT((keySize == 2), "[ERROR]");
+				ASSERT((dataSize == 6), "[ERROR]");
+				PCBTHRecord record{};
+				record.wPropId = utils::slice(bytes, 0, 2, 2, utils::toT_l<uint32_t>);
+				record.wPropType = utils::slice(bytes, 2, 4, 2, utils::toT_l<uint32_t>);
+				record.dwValueHnid = utils::slice(bytes, 4, 8, 4);
+				//record.dwValueHnid = HNID(utils::slice(bytes, 4, 8, 4));
+
+				ASSERT((utils::isIn(record.wPropType, utils::PROPERTY_TYPE_VALUES)), "[ERROR] Invalid property type");
+				return record;
+			}
+
+			static TCRowID asTCRowID(
+				const std::vector<types::byte_t>& bytes,
+				size_t keySize,
+				size_t dataSize
+			)
+			{
+				ASSERT((bytes.size() == 8), "[ERROR]");
+				ASSERT((keySize == 4), "[ERROR]");
+				ASSERT((dataSize == 4), "[ERROR]");
+				TCRowID record{};
+				record.dwRowID = utils::slice(bytes, 0, 4, 4, utils::toT_l<uint32_t>);
+				record.dwRowIndex = utils::slice(bytes, 4, 8, 4, utils::toT_l<uint32_t>);
+				return record;
+			}
+
+			template<typename RecordType>
+			RecordType as() const
+			{
+				if constexpr (std::is_same_v<RecordType, LeafBTHRecord>)
+					return asLeafBTHRecord(m_data, m_keySize, m_dataSize);
+
+				else if constexpr (std::is_same_v<RecordType, IntermediateBTHRecord>)
+					return asIntermediateBTHRecord(m_data, m_keySize);
+
+				else if constexpr (std::is_same_v<RecordType, PCBTHRecord>)
+					return asPCBTHRecord(m_data, m_keySize, m_dataSize);
+
+				else if constexpr (std::is_same_v<RecordType, TCRowID>)
+					return asTCRowID(m_data, m_keySize, m_dataSize);
+
+				else
+					ASSERT(false, "[ERROR] Invalid Record Type");
+			}
+		private:
+			size_t m_keySize{};
+			size_t m_dataSize{};
+			std::vector<types::byte_t> m_data{};
 		};
 
 		struct HNBlock
@@ -539,18 +622,22 @@ namespace reader {
 		class HN 
 		{
 		public:
-			HN(
-				const std::vector<types::byte_t>& dataOfFirstDataBlock, 
-				ndb::NBTEntry nbtentry,
-				size_t nDataBlocks
-			) 
-				: m_nDataBlocks(nDataBlocks), m_nbtentry(nbtentry)
+			HN() = default;
+
+			HN(ndb::DataTree& dTree, ndb::NBTEntry nbt)
+				: m_nbt(nbt)
 			{
-				m_hnhdr = readHNHDR(dataOfFirstDataBlock, 0, nDataBlocks);
+				m_hnhdr = readHNHDR(dTree.first().data, 0, dTree.size());
+
 				HNBlock block{};
-				block.map = readHNPageMap(dataOfFirstDataBlock, m_hnhdr.ibHnpm);
-				block.data = dataOfFirstDataBlock;
+				block.map = readHNPageMap(dTree.first().data, m_hnhdr.ibHnpm);
+				block.data = dTree.first().data;
 				m_blocks.push_back(block);
+
+				for (size_t i = 1; i < dTree.dataBlocks.size(); i++)
+				{
+					addBlock(dTree.dataBlocks.at(i).data, i);
+				}
 			}
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
@@ -607,7 +694,7 @@ namespace reader {
 				return utils::slice(block.data, offset, static_cast<size_t>(offset + size), size);
 			}
 
-			std::vector<types::byte_t> alloc(const HID& hid)
+			std::vector<types::byte_t> alloc(const HID& hid) const
 			{
 				size_t blockIdx = hid.getHIDBlockIndex();
 				size_t pageIdx = hid.getHIDAllocIndex();
@@ -730,17 +817,16 @@ namespace reader {
 			}
 			private:
 				HNHDR m_hnhdr;
-				size_t m_nDataBlocks;
 				std::vector<HNBlock> m_blocks;
-				ndb::NBTEntry m_nbtentry{};
+				ndb::NBTEntry m_nbt{};
 		};
 
 		class BTreeHeap
 		{
 		public:
-			BTreeHeap(const HN& hn) : m_hn(hn) 
+			BTreeHeap(const HN& hn, HID bthHeaderHID) : m_hn(hn) 
 			{ 
-				_init();
+				_init(bthHeaderHID);
 			}
 
 			static BTHHeader readBTHHeader(const std::vector<types::byte_t>& bytes)
@@ -800,15 +886,20 @@ namespace reader {
 				return m_header.cbEnt;
 			}
 
+			size_t nrecords() const
+			{
+				return m_records.size();
+			}
+
 			std::vector<Record> records() const
 			{
 				return m_records;
 			}
 
 		private:
-			void _init()
+			void _init(HID bthHeaderHID)
 			{
-				std::vector<types::byte_t> headerBytes = m_hn.alloc(m_hn.getHeader().hidUserRoot);
+				std::vector<types::byte_t> headerBytes = m_hn.alloc(bthHeaderHID);
 				m_header = readBTHHeader(headerBytes);
 				m_records = readBTHRecords(
 					m_hn.alloc(m_header.hidRoot),
@@ -890,7 +981,7 @@ namespace reader {
 		{
 		public:
 			uint32_t id{};
-			types::PropertyType propType{ types::PropertyType::PtypNull };
+			types::PropertyType propType{ types::PropertyType::Null };
 			utils::PTInfo info{};
 			std::vector<types::byte_t> data{};
 
@@ -915,14 +1006,14 @@ namespace reader {
 				ASSERT(std::cmp_equal(data.size() % 2ull, 0ull), "[ERROR] Property is not a PTString");
 				ASSERT(std::cmp_greater(data.size(), 0ull), "[ERROR] Property is not a PTString");
 
-				std::vector<types::utf8_t> characters{};
+				std::vector<uint8_t> characters{};
 				for(uint32_t i = 0; i < data.size() / 2ull; ++i)
 				{
 					uint32_t start = utils::cast<uint32_t>(i * info.singleEntrySize);
 					uint32_t end = utils::cast<uint32_t>(start + info.singleEntrySize);
 					// TODO: For now this just takes the most significant byte and converts it to utf8
 					types::utf16le_t character = utils::slice(data, start, end, end - start, utils::toT_l<types::utf16le_t>);
-					characters.push_back(utils::cast<types::utf8_t>(character & 0xFF));
+					characters.push_back(utils::cast<uint8_t>(character & 0xFF));
 				}
 				PTString str{};
 				str.id = id;
@@ -954,7 +1045,7 @@ namespace reader {
 		public:
 			PropertyContext() = default;
 			PropertyContext(ndb::NDB& ndb, HN& hn)
-				: m_hn(hn), m_bth(hn), m_ndb(ndb)
+				: m_hn(hn), m_bth(hn, hn.getHeader().hidUserRoot), m_ndb(ndb)
 			{
 				_init();
 			}
@@ -1022,6 +1113,216 @@ namespace reader {
 			ndb::NDB& m_ndb;
 		};
 
+		class RowBlock
+		{
+
+		public:
+			RowBlock(const std::vector<types::byte_t>& blockBytes, const TCInfo& header, uint64_t rowsPerBlock)
+			{
+				size_t singleRowSize = header.rgib.at(TCInfo::TCI_bm);
+				for (size_t i = 0; i < blockBytes.size() / singleRowSize; ++i)
+				{
+					size_t start = i * singleRowSize;
+					size_t end = start + singleRowSize;
+					m_rows.emplace_back(
+						utils::slice(blockBytes, start, end, singleRowSize),
+						header
+					);
+				}
+				ASSERT((m_rows.size() == rowsPerBlock), "[ERROR] Invalid number of rows");
+			}
+
+			const RowData& at(size_t rowIdx) const
+			{
+				return m_rows.at(rowIdx);
+			}
+
+		private:
+			std::vector<RowData> m_rows{};
+		};
+
+		class TableContext
+		{
+
+		public:
+			TableContext(core::NID nid, ndb::NDB& ndb)
+				: m_nid(nid), m_ndb(ndb)
+			{
+				ndb::NBTEntry nbt = m_ndb.get(m_nid);
+				ndb::BBTEntry bbt = m_ndb.get(nbt.bidData);
+				ndb::DataTree dataTree = m_ndb.readDataTree(bbt.bref, bbt.cb);
+				//HN hn(dataTree, nbt);
+				m_hn = std::move(HN(dataTree, nbt));
+				ASSERT((m_hn.getHeader().bClientSig == utils::cast<int64_t>(types::BType::TC)), "[ERROR]");
+
+				m_header = readTCInfo(m_hn.alloc(m_hn.getHeader().hidUserRoot));
+				BTreeHeap bth(m_hn, m_header.hidRowIndex);
+				ASSERT((bth.keySize() == 4), "[ERROR]");
+				ASSERT((bth.dataSize() == 4), "[ERROR]");
+
+				if (m_header.hnidRows.isHID() && nbt.bidSub == 0) // Row Matrix is in the HN
+				{
+					auto rowBlockBytes = m_hn.alloc(m_header.hnidRows.as<HID>());
+					m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
+					/// This check only works for HID allocated Row Matrices
+					ASSERT((m_rowsPerBlock == bth.nrecords()), "[ERROR] Invalid number of rows per block");
+					
+					m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
+				}
+
+				else // Row Matrix must be in a subnode id'ed by a NID
+				{
+					/// Each block except the last one MUST have a size of 8192 bytes.
+					ASSERT(false, "[ERROR] Not implemented yet");
+				}
+
+				for(const auto& record : bth.records())
+				{
+					m_rowIDs.push_back(record.as<TCRowID>());
+				}
+
+				// Testing only
+				const RowData& rowdata = at(m_rowIDs.at(0));
+				Property prop = at(m_rowIDs.at(0), 0);
+				at(m_rowIDs.at(1), 1);
+				at(m_rowIDs.at(1), 2);
+				at(m_rowIDs.at(1), 3);
+				at(m_rowIDs.at(1), 4);
+				at(m_rowIDs.at(1), 5);
+			}
+
+			const RowData& at(TCRowID rowID) const
+			{
+				size_t blockIdx = rowID.dwRowIndex / m_rowsPerBlock;
+				size_t rowIdx = rowID.dwRowIndex % m_rowsPerBlock;
+				return m_rowBlocks.at(blockIdx).at(rowIdx);
+			}
+
+			Property at(TCRowID rowID, size_t colIdx) const
+			{
+				const RowData& rowData = at(rowID);
+				const TCInfo tcInfo = rowData.tcInfo;
+				const TColDesc& colDesc = tcInfo.rgTCOLDESC.at(colIdx);
+
+				ASSERT((rowData.dwRowID == rowID.dwRowID), "[ERROR]");
+
+				if (rowData.exists(colDesc.iBit))
+				{
+					// Property Type is stored in the lower 16 bits of tag
+					types::PropertyType propType = utils::PropertyType(colDesc.propType());
+					utils::PTInfo ptInfo = utils::PropertyTypeInfo(propType);
+
+					Property prop{};
+					// The upper 16 bits of tag is the PropID
+					prop.id = colDesc.propId();
+					prop.propType = propType;
+					prop.info = ptInfo;
+
+					if (ptInfo.isMv || !ptInfo.isFixed || ptInfo.singleEntrySize > 8ull) // Data stored in Heap(HID) or subnode(NID)
+					{
+						ASSERT((HNID::size() == static_cast<size_t>(colDesc.cbData)), "[ERROR]");
+						// An HNID is a 4 byte value so therefore should be within TCI_4b range.
+						ASSERT((colDesc.ibData < tcInfo.rgib.at(TCInfo::TCI_4b)), "[ERROR]");
+						HNID hnid(
+							utils::slice(
+								rowData.data,
+								static_cast<uint32_t>(colDesc.ibData),
+								colDesc.ibData + static_cast<uint32_t>(colDesc.cbData),
+								static_cast<uint32_t>(colDesc.cbData)
+							)
+						);
+
+						if (hnid.isHID()) // HNID is an HID which means the data is stored in the HN
+						{
+							prop.data = m_hn.alloc(hnid.as<HID>());
+						}
+
+						else // HNID is an NID which means that the data is stored in a subnode
+						{
+							ASSERT(false, "[ERROR] Not Implemented");
+						}
+					}
+
+					else if (!ptInfo.isMv && ptInfo.isFixed && ptInfo.singleEntrySize <= 8ull) // Data stored in RowData
+					{
+						// An HNID is a 4 byte value so therefore should be within TCI_4b range.
+						ASSERT((colDesc.ibData < tcInfo.rgib.at(TCInfo::TCI_4b)), "[ERROR]");
+						prop.data = utils::slice(
+											rowData.data,
+											colDesc.ibData,
+											static_cast<uint16_t>(colDesc.cbData),
+											static_cast<uint16_t>(colDesc.cbData)
+										);
+					}
+
+					else
+					{
+						ASSERT(false, "[ERROR] Invalid Column");
+					}
+					return prop;
+				}
+				//ASSERT(false, "[ERROR] Not handling non-existent columns");
+				return Property{};
+			}
+
+			static TCInfo readTCInfo(const std::vector<types::byte_t>& bytes)
+			{
+				TCInfo info{};
+				info.bType = utils::toBType(utils::slice(bytes, 0, 1, 1, utils::toT_l<uint8_t>));
+				info.cCols = utils::slice(bytes, 1, 2, 1, utils::toT_l<uint8_t>);
+				std::vector<types::byte_t> rgibBytes = utils::slice(bytes, 2, 10, 8);
+				size_t singlergibSize = 2ull;
+				for (size_t i = 0; i < 4ull; i++)
+				{
+					size_t start = i * singlergibSize;
+					size_t end = start + singlergibSize;
+					info.rgib.push_back(utils::slice(rgibBytes, start, end, singlergibSize, utils::toT_l<uint16_t>));
+				}
+				info.hidRowIndex = HID(utils::slice(bytes, 10, 14, 4));
+				info.hnidRows = HNID(utils::slice(bytes, 14, 18, 4)); 
+				/// hidIndex is deprecated. Should be set to 0
+				info.hidIndex = utils::slice(bytes, 18, 22, 4, utils::toT_l<uint32_t>);
+				info.rgTCOLDESC = readTColDesc(utils::slice(bytes, 22ull, bytes.size(), bytes.size() - 22ull));
+
+				ASSERT((info.bType == types::BType::TC), "[ERROR] Invalid BType");
+				ASSERT((info.cCols == info.rgTCOLDESC.size()), "[ERROR] Invalid size");
+				return info;
+			}
+
+			static std::vector<TColDesc> readTColDesc(const std::vector<types::byte_t>& bytes)
+			{
+				size_t singleTColDescSize = 8;
+				ASSERT((bytes.size() % singleTColDescSize == 0), "[ERROR] Invalid size");
+				std::vector<TColDesc> cols{};
+
+				for (size_t i = 0; i < bytes.size() / singleTColDescSize; ++i)
+				{
+					size_t start = i * singleTColDescSize;
+					size_t end = start + singleTColDescSize;
+					std::vector<types::byte_t> colBytes = utils::slice(bytes, start, end, singleTColDescSize);
+					TColDesc col{};
+					col.tag = utils::slice(colBytes, 0, 4, 4, utils::toT_l<uint32_t>);
+					col.ibData = utils::slice(colBytes, 4, 6, 2, utils::toT_l<uint16_t>);
+					col.cbData = utils::slice(colBytes, 6, 7, 1, utils::toT_l<uint8_t>);
+					col.iBit = utils::slice(colBytes, 7, 8, 1, utils::toT_l<uint8_t>);
+					cols.push_back(col);
+				}
+				/// The entries in this array MUST be sorted by the tag field of TCOLDESC. In ascending order.
+				std::sort(cols.begin(), cols.end(), 
+					[](const TColDesc& lhs, const TColDesc& rhs) { return lhs.tag < rhs.tag; });
+				return cols;
+			}
+
+		private:
+			core::NID m_nid;
+			ndb::NDB& m_ndb;
+			uint64_t m_rowsPerBlock;
+			std::vector<RowBlock> m_rowBlocks;
+			std::vector<TCRowID> m_rowIDs;
+			TCInfo m_header;
+			HN m_hn;
+		};
+
 		class LTP
 		{
 		public:
@@ -1033,26 +1334,26 @@ namespace reader {
 			void _init()
 			{
 
-				//ndb::NBTEntry nbtentry = m_ndb.get(core::NID_ROOT_FOLDER);
-				ndb::NBTEntry nbtentry = m_ndb.get(core::NID_MESSAGE_STORE);
-				ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
-				//LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
-				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				HN hn = readHN(dataTree, nbtentry);
-				PropertyContext pc(m_ndb, hn);
+				////ndb::NBTEntry nbtentry = m_ndb.get(core::NID_ROOT_FOLDER);
+				//ndb::NBTEntry nbtentry = m_ndb.get(core::NID_MESSAGE_STORE);
+				//ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
+				////LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
+				//ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
+				//HN hn = readHN(dataTree, nbtentry);
+				//PropertyContext pc(m_ndb, hn);
 			}
 
-			static HN readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
-			{
-				ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
-				HN hn(tree.dataBlocks.at(0).data, entry, tree.dataBlocks.size());
-				//uint32_t bthPos = map.rgibAlloc.at(hdr.hidUserRoot.getHIDBlockIndex());
-				for (size_t i = 1; i < tree.dataBlocks.size(); i++)
-				{
-					hn.addBlock(tree.dataBlocks.at(i).data, i);
-				}
-				return hn;
-			}
+			//static HN readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
+			//{
+			//	ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
+			//	HN hn(tree.dataBlocks.at(0).data, entry, tree.dataBlocks.size());
+			//	//uint32_t bthPos = map.rgibAlloc.at(hdr.hidUserRoot.getHIDBlockIndex());
+			//	for (size_t i = 1; i < tree.dataBlocks.size(); i++)
+			//	{
+			//		hn.addBlock(tree.dataBlocks.at(i).data, i);
+			//	}
+			//	return hn;
+			//}
 
 		private:
 			ndb::NDB& m_ndb;

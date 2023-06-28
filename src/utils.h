@@ -300,69 +300,69 @@ namespace reader {
         {
             switch (cast<types::PropertyType>(id))
             {
-                case types::PropertyType::PtypInteger16              : return PTInfo{ false, true, 2 }; // fixed length and only a single 2 byte entry
-                case types::PropertyType::PtypInteger32              : return PTInfo{ false, true, 4 };
-                case types::PropertyType::PtypFloating32             : return PTInfo{ false, true, 4 };
-                case types::PropertyType::PtypFloating64             : return PTInfo{ false, true, 8 };
-                case types::PropertyType::PtypCurrency               : return PTInfo{ false, true, 8 };
-                case types::PropertyType::PtypFloatingTime           : return PTInfo{ false, true, 8 };
-                case types::PropertyType::PtypErrorCode              : return PTInfo{ false, true, 4 };
-                case types::PropertyType::PtypBoolean                : return PTInfo{ false, true, 1 };
-                case types::PropertyType::PtypInteger64              : return PTInfo{ false, true, 8 };
-                case types::PropertyType::PtypString                 : return PTInfo{ false, false, 2 }; // Null terminated & variable length structure with a fixed entry size of 2 bytes
+                case types::PropertyType::Integer16              : return PTInfo{ false, true, 2 }; // fixed length and only a single 2 byte entry
+                case types::PropertyType::Integer32              : return PTInfo{ false, true, 4 };
+                case types::PropertyType::Floating32             : return PTInfo{ false, true, 4 };
+                case types::PropertyType::Floating64             : return PTInfo{ false, true, 8 };
+                case types::PropertyType::Currency               : return PTInfo{ false, true, 8 };
+                case types::PropertyType::FloatingTime           : return PTInfo{ false, true, 8 };
+                case types::PropertyType::ErrorCode              : return PTInfo{ false, true, 4 };
+                case types::PropertyType::Boolean                : return PTInfo{ false, true, 1 };
+                case types::PropertyType::Integer64              : return PTInfo{ false, true, 8 };
+                case types::PropertyType::String                 : return PTInfo{ false, false, 2 }; // Null terminated & variable length structure with a fixed entry size of 2 bytes
                 
-                case types::PropertyType::PtypString8: 
+                case types::PropertyType::String8: // UTF-8 String (Variable Length String)
                     ASSERT(false, "PtypString8 is not implemented yet");
                     return PTInfo{ false, false, 64 }; // Null terminated & variable length structure and only a single n byte entry
                 
-                case types::PropertyType::PtypTime                   : return PTInfo{ false, true, 8 };
-                case types::PropertyType::PtypGuid                   : return PTInfo{ false, true, 16 };
+                case types::PropertyType::Time                   : return PTInfo{ false, true, 8 };
+                case types::PropertyType::Guid                   : return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypServerId:
+                case types::PropertyType::ServerId:
                     ASSERT(false, "PtypServerId is not implemented yet");
                     return PTInfo{ false, true, 16 }; // variable length structure and only a single n byte entry
                 
-                case types::PropertyType::PtypRestriction: 
+                case types::PropertyType::Restriction: 
                     ASSERT(false, "PtypRestriction is not implemented yet");
                     return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypRuleAction: 
+                case types::PropertyType::RuleAction: 
                     ASSERT(false, "PtypRuleAction is not implemented yet");
                     return PTInfo{ false, true, 16 }; // variable structure size and variable entry size
                 
-                case types::PropertyType::PtypBinary                 : return PTInfo{ false, false, 0 };
-                case types::PropertyType::PtypMultipleInteger16      : return PTInfo{ true, true, 2 }; // variable structure size and a fixed entry size of 2 bytes
-                case types::PropertyType::PtypMultipleInteger32      : return PTInfo{ true, true, 4 };
-                case types::PropertyType::PtypMultipleFloating32     : return PTInfo{ true, true, 4 };
-                case types::PropertyType::PtypMultipleFloating64     : return PTInfo{ true, true, 8 };
-                case types::PropertyType::PtypMultipleCurrency       : return PTInfo{ true, true, 8 };
-                case types::PropertyType::PtypMultipleFloatingTime   : return PTInfo{ true, true, 8 };
-                case types::PropertyType::PtypMultipleInteger64      : return PTInfo{ true, true, 8 };
-                case types::PropertyType::PtypMultipleString         : return PTInfo{ true, true, 2 };
+                case types::PropertyType::Binary                 : return PTInfo{ false, false, 0 };
+                case types::PropertyType::MultipleInteger16      : return PTInfo{ true, true, 2 }; // variable structure size and a fixed entry size of 2 bytes
+                case types::PropertyType::MultipleInteger32      : return PTInfo{ true, true, 4 };
+                case types::PropertyType::MultipleFloating32     : return PTInfo{ true, true, 4 };
+                case types::PropertyType::MultipleFloating64     : return PTInfo{ true, true, 8 };
+                case types::PropertyType::MultipleCurrency       : return PTInfo{ true, true, 8 };
+                case types::PropertyType::MultipleFloatingTime   : return PTInfo{ true, true, 8 };
+                case types::PropertyType::MultipleInteger64      : return PTInfo{ true, true, 8 };
+                case types::PropertyType::MultipleString         : return PTInfo{ true, true, 2 };
                 
-                case types::PropertyType::PtypMultipleString8: 
+                case types::PropertyType::MultipleString8: 
                     ASSERT(false, "PtypMultipleString8 is not implemented yet");
                     return PTInfo{ true, false, 0 };
                 
-                case types::PropertyType::PtypMultipleTime:
+                case types::PropertyType::MultipleTime:
                     ASSERT(false, "PtypMultipleTime is not implemented yet");
                     return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypMultipleGuid: 
+                case types::PropertyType::MultipleGuid: 
                     ASSERT(false, "PtypMultipleGuid is not implemented yet");
                     return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypMultipleBinary         : return PTInfo{ true, false, 0 };
+                case types::PropertyType::MultipleBinary         : return PTInfo{ true, false, 0 };
                 
-                case types::PropertyType::PtypUnspecified:
+                case types::PropertyType::Unspecified:
                     ASSERT(false, "PtypUnspecified is not implemented yet");
                     return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypNull: 
+                case types::PropertyType::Null: 
                     ASSERT(false, "PtypNull is not implemented yet");
                     return PTInfo{ false, true, 16 };
                 
-                case types::PropertyType::PtypObject                 : return PTInfo{ false, false, 0 };
+                case types::PropertyType::Object                 : return PTInfo{ false, false, 0 };
                
                 default: 
                     ASSERT(false, "Unknown Property Type");
@@ -374,41 +374,41 @@ namespace reader {
         {
             switch (id)
             {
-            case 0x0002: return types::PropertyType::PtypInteger16           ;
-            case 0x0003: return types::PropertyType::PtypInteger32           ;
-            case 0x0004: return types::PropertyType::PtypFloating32          ;
-            case 0x0005: return types::PropertyType::PtypFloating64          ;
-            case 0x0006: return types::PropertyType::PtypCurrency            ;
-            case 0x0007: return types::PropertyType::PtypFloatingTime        ;
-            case 0x000A: return types::PropertyType::PtypErrorCode           ;
-            case 0x000B: return types::PropertyType::PtypBoolean             ;
-            case 0x0014: return types::PropertyType::PtypInteger64           ;
-            case 0x001F: return types::PropertyType::PtypString              ;
-            case 0x001E: return types::PropertyType::PtypString8             ;
-            case 0x0040: return types::PropertyType::PtypTime                ;
-            case 0x0048: return types::PropertyType::PtypGuid                ;
-            case 0x00FB: return types::PropertyType::PtypServerId            ;
-            case 0x00FD: return types::PropertyType::PtypRestriction         ;
-            case 0x00FE: return types::PropertyType::PtypRuleAction          ;
-            case 0x0102: return types::PropertyType::PtypBinary              ;
-            case 0x1002: return types::PropertyType::PtypMultipleInteger16   ;
-            case 0x1003: return types::PropertyType::PtypMultipleInteger32   ;
-            case 0x1004: return types::PropertyType::PtypMultipleFloating32  ;
-            case 0x1005: return types::PropertyType::PtypMultipleFloating64  ;
-            case 0x1006: return types::PropertyType::PtypMultipleCurrency    ;
-            case 0x1007: return types::PropertyType::PtypMultipleFloatingTime;
-            case 0x1014: return types::PropertyType::PtypMultipleInteger64   ;
-            case 0x101F: return types::PropertyType::PtypMultipleString      ;
-            case 0x101E: return types::PropertyType::PtypMultipleString8     ;
-            case 0x1040: return types::PropertyType::PtypMultipleTime        ;
-            case 0x1048: return types::PropertyType::PtypMultipleGuid        ;
-            case 0x1102: return types::PropertyType::PtypMultipleBinary      ;
-            case 0x0000: return types::PropertyType::PtypUnspecified         ;
-            case 0x0001: return types::PropertyType::PtypNull                ;
-            case 0x000D: return types::PropertyType::PtypObject              ;
+            case 0x0002: return types::PropertyType::Integer16           ;
+            case 0x0003: return types::PropertyType::Integer32           ;
+            case 0x0004: return types::PropertyType::Floating32          ;
+            case 0x0005: return types::PropertyType::Floating64          ;
+            case 0x0006: return types::PropertyType::Currency            ;
+            case 0x0007: return types::PropertyType::FloatingTime        ;
+            case 0x000A: return types::PropertyType::ErrorCode           ;
+            case 0x000B: return types::PropertyType::Boolean             ;
+            case 0x0014: return types::PropertyType::Integer64           ;
+            case 0x001F: return types::PropertyType::String              ;
+            case 0x001E: return types::PropertyType::String8             ;
+            case 0x0040: return types::PropertyType::Time                ;
+            case 0x0048: return types::PropertyType::Guid                ;
+            case 0x00FB: return types::PropertyType::ServerId            ;
+            case 0x00FD: return types::PropertyType::Restriction         ;
+            case 0x00FE: return types::PropertyType::RuleAction          ;
+            case 0x0102: return types::PropertyType::Binary              ;
+            case 0x1002: return types::PropertyType::MultipleInteger16   ;
+            case 0x1003: return types::PropertyType::MultipleInteger32   ;
+            case 0x1004: return types::PropertyType::MultipleFloating32  ;
+            case 0x1005: return types::PropertyType::MultipleFloating64  ;
+            case 0x1006: return types::PropertyType::MultipleCurrency    ;
+            case 0x1007: return types::PropertyType::MultipleFloatingTime;
+            case 0x1014: return types::PropertyType::MultipleInteger64   ;
+            case 0x101F: return types::PropertyType::MultipleString      ;
+            case 0x101E: return types::PropertyType::MultipleString8     ;
+            case 0x1040: return types::PropertyType::MultipleTime        ;
+            case 0x1048: return types::PropertyType::MultipleGuid        ;
+            case 0x1102: return types::PropertyType::MultipleBinary      ;
+            case 0x0000: return types::PropertyType::Unspecified         ;
+            case 0x0001: return types::PropertyType::Null                ;
+            case 0x000D: return types::PropertyType::Object              ;
             default:
                 ASSERT(false, "Unknown Property Type");
-                return types::PropertyType::PtypNull;
+                return types::PropertyType::Null;
             }
         }
 
@@ -455,7 +455,7 @@ namespace reader {
             }
         }
 
-        types::PidTagType PidTagType(uint32_t id)
+        types::PidTagType PidTagType(uint64_t id)
         {
             switch (id)
             {
@@ -464,11 +464,31 @@ namespace reader {
                 case 0x35E0: return types::PidTagType::IpmSubTreeEntryId;
                 case 0x35E3: return types::PidTagType::IpmWastebasketEntryId;
                 case 0x35E7: return types::PidTagType::FinderEntryId;
-                case 0x3602: return types::PidTagType::PidTagContentCount;
-                case 0x3603: return types::PidTagType::PidTagContentUnreadCount;
-                case 0x360A: return types::PidTagType::PidTagSubfolders;
+                case 0x3602: return types::PidTagType::ContentCount;
+                case 0x3603: return types::PidTagType::ContentUnreadCount;
+                case 0x360A: return types::PidTagType::Subfolders;
+                case 0x0001: return types::PidTagType::NameidBucketCount;
+                case 0x0002: return types::PidTagType::NameidStreamGuid;
+                case 0x0003: return types::PidTagType::NameidStreamEntry;
+                case 0x0004: return types::PidTagType::NameidStreamString;
+                case 0x1000: return types::PidTagType::NameidBucketBase;
+                case 0x1097: return types::PidTagType::ItemTemporaryFlags;
+                case 0x661D: return types::PidTagType::PstBestBodyProptag;
+                case 0x6635: return types::PidTagType::PstHiddenCount;
+                case 0x6636: return types::PidTagType::PstHiddenUnread;
+                case 0x6705: return types::PidTagType::PstIpmsubTreeDescendant;
+                case 0x6772: return types::PidTagType::PstSubTreeContainer;
+                case 0x67F1: return types::PidTagType::LtpParentNid;
+                case 0x67F2: return types::PidTagType::LtpRowId;
+                case 0x67F3: return types::PidTagType::LtpRowVer;
+                case 0x67FF: return types::PidTagType::PstPassword;
+                case 0x682F: return types::PidTagType::MapiFormComposeCommand;
+                case 0x0E30: return types::PidTagType::ReplItemid;
+                case 0x0E33: return types::PidTagType::ReplChangenum;
+                case 0x0E34: return types::PidTagType::ReplVersionHistory;
+                case 0x0E38: return types::PidTagType::ReplFlags;
                 default:
-                    ASSERT(false, "Invalid PidTagType");
+                    //ASSERT(false, "Invalid PidTagType");
                     return types::PidTagType::Unknown;
             }
         }

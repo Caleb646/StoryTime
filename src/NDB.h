@@ -6,6 +6,7 @@
 #include <fstream>
 #include <type_traits>
 #include <utility>
+#include <map>
 
 #include "types.h"
 #include "utils.h"
@@ -511,7 +512,7 @@ namespace reader {
             /// data (Variable): Raw data.
             std::vector<types::byte_t> data{};
             /// padding (Variable, Optional): Reserved.
-            int32_t padding{};
+            int32_t padding{0};
             BlockTrailer trailer{};
         };
 
@@ -592,6 +593,21 @@ namespace reader {
 				xxBlocks.push_back(xxBlock);
 			}
 
+            const DataBlock& first() const
+            {
+                return dataBlocks.front();
+            }
+
+            size_t size() const
+            {
+                return dataBlocks.size();
+            }
+
+            size_t size(size_t dataBlockIdx) const
+            {
+                return dataBlocks.at(dataBlockIdx).data.size();
+            }
+
             bool isValid() const
 			{
 				return !dataBlocks.empty() || !xBlocks.empty() || !xxBlocks.empty();
@@ -647,9 +663,9 @@ namespace reader {
 				return true;
 			}
 
-            std::vector<NBTEntry> all(core::NID nid)
+            std::map<types::NIDType, NBTEntry> all(core::NID nid)
             {
-                std::vector<NBTEntry> entries{};
+                std::map<types::NIDType, NBTEntry> entries{};
                 for (size_t i = 0; i < m_pages.size(); i++)
                 {
                     const BTPage& page = m_pages.at(i);
@@ -663,7 +679,8 @@ namespace reader {
                             // the NID Type and NID Index.
                             if (entry.nid.getNIDIndex() == nid.getNIDIndex())
                             {
-                                    entries.push_back(entry);
+                                    ASSERT((entries.count(entry.nid.getNIDType()) == 0), "Duplicate NID Type found in NBT");
+                                    entries[entry.nid.getNIDType()] = entry;
                             }
                         }
                     }
@@ -795,7 +812,7 @@ namespace reader {
                 _init();
             }
 
-            std::vector<NBTEntry> all(core::NID nid)
+            std::map<types::NIDType, NBTEntry> all(core::NID nid)
 			{
 				return m_rootNBT.all(nid);
 			}

@@ -6,6 +6,7 @@
 #include <string>
 #include <fstream>
 #include <utility>
+#include <map>
 
 #include "types.h"
 #include "utils.h"
@@ -35,7 +36,24 @@ namespace reader
 		*/
 		class Folder
 		{
+		public:
+			Folder(core::NID nid, ndb::NDB& ndb)
+				: m_nid(nid), m_ndb(ndb)
+			{
+				std::map<types::NIDType, ndb::NBTEntry> nbtentries = m_ndb.all(m_nid);
+				ASSERT((nbtentries.size() == 4), "[ERROR] A Folder must be composed of 4 Parts");
+				ASSERT((nbtentries.count(types::NIDType::NORMAL_FOLDER) == 1), "[ERROR] A Folder must have a NORMAL_FOLDER");
+				ASSERT((nbtentries.count(types::NIDType::HIERARCHY_TABLE) == 1), "[ERROR] A Folder must have a HIERARCHY_TABLE");
+				ASSERT((nbtentries.count(types::NIDType::CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a CONTENTS_TABLE");
+				ASSERT((nbtentries.count(types::NIDType::ASSOC_CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a ASSOC_CONTENTS_TABLE");
 
+				ltp::TableContext hier(nbtentries.at(types::NIDType::HIERARCHY_TABLE).nid, m_ndb);
+			}
+
+
+		private:
+			core::NID m_nid;
+			ndb::NDB& m_ndb;
 		};
 
 		struct EntryID
@@ -74,59 +92,96 @@ namespace reader
 				*	0x35E7					PtypBinary				PidTagFinderEntryId			EntryID of the search Folder object
 				*/
 
+				_init();
+			}
+
+		public:
+			template<typename PropType>
+			PropType as(types::PidTagType pt)
+			{
+				if constexpr (std::is_same_v<PropType, EntryID>)
+				{
+					return EntryID(
+						m_properties.at(pt).asPTBinary().data,
+						m_properties.at(types::PidTagType::RecordKey).asPTBinary().data
+					);
+				}
+				else
+				{
+					return m_properties.at(pt).as<PropType>();
+				}
+			}
+
+			bool has(types::PidTagType pt)
+			{
+				return m_properties.count(pt) > 0;
+			}
+
+		private:
+			void _init()
+			{
 				m_nbtentry = m_ndb.get(m_nid);
 				ndb::BBTEntry bbtentry = m_ndb.get(m_nbtentry.bidData);
 				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				ltp::HN hn = ltp::LTP::readHN(dataTree, m_nbtentry);
+				ltp::HN hn(dataTree, m_nbtentry);
 				ltp::PropertyContext pc(m_ndb, hn);
 
-				std::vector<types::byte_t> pidTagRecordKey;
-
-				uint8_t flags{ 0 };
 				for (const ltp::Property& prop : pc)
 				{
-					if (prop.id == 0x0FF9) // PtypBinary -- PidTagRecordKey -- Record key. This is the Provider UID of this PST.
+					types::PidTagType pt = utils::PidTagType(prop.id);
+					if (pt == types::PidTagType::Unknown)
 					{
-						ltp::PTBinary bin = prop.as<ltp::PTBinary>();
-						pidTagRecordKey = bin.data;
+						LOG("[WARN] Unknown property found in MessageStore in hex: [%X]", prop.id);
+						continue;
+					}
+					ASSERT((m_properties.count(pt) == 0), "[ERROR] Duplicate property found in MessageStore");
+					m_properties[pt] = prop;
+				}
+				ASSERT(_hasMinimumRequiredProperties() == true, "[ERROR] MessageStore does not have minimum required properties");
+				LOG("[INFO] Message Store Display Name: [%s]", 
+					as<ltp::PTString>(types::PidTagType::DisplayName).data.c_str());
+			}
+
+			bool _hasMinimumRequiredProperties()
+			{
+				uint8_t flags{ 0 };
+				for (const auto& [pt, prop] : m_properties)
+				{
+					if (pt == types::PidTagType::RecordKey) // PtypBinary -- PidTagRecordKey -- Record key. This is the Provider UID of this PST.
+					{
+						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
 						flags |= 1;
 					}
-					else if (prop.id == 0x3001) // PtypString -- PidTagDisplayName -- Display name of PST
+					else if (pt == types::PidTagType::DisplayName) // PtypString -- PidTagDisplayName -- Display name of PST
 					{
-						ltp::PTString str = prop.as<ltp::PTString>();
+						ASSERT((prop.propType == types::PropertyType::String), "PropType is not String");
 						flags |= 2;
-						LOG("Message Store Display Name: [%s]", str.data.c_str());
 					}
-					else if (prop.id == 0x35E0) // PtypBinary -- PidTagIpmSubTreeEntryId -- EntryID of the Root Mailbox Folder object
+					else if (pt == types::PidTagType::IpmSubTreeEntryId) // PtypBinary -- PidTagIpmSubTreeEntryId -- EntryID of the Root Mailbox Folder object
 					{
-						ltp::PTBinary bin = prop.as<ltp::PTBinary>();
+						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
 						flags |= 4;
-						EntryID entryID(bin.data, pidTagRecordKey);
-						//auto ids = m_ndb.all(entryID.nid);
-						//ASSERT((entryID.nid == core::NID_ROOT_FOLDER), "MessageStore Root Folder NID is not NID_ROOT_FOLDER");
 					}
-					else if (prop.id == 0x35E3) // PtypBinary -- PidTagIpmWastebasketEntryId -- EntryID of the Deleted Items Folder object
+					else if (pt == types::PidTagType::IpmWastebasketEntryId) // PtypBinary -- PidTagIpmWastebasketEntryId -- EntryID of the Deleted Items Folder object
 					{
-						ltp::PTBinary bin = prop.as<ltp::PTBinary>();
+						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
 						flags |= 8;
 					}
-					else if(prop.id == 0x35E7) // PtypBinary -- PidTagFinderEntryId -- EntryID of the search Folder object
+					else if (pt == types::PidTagType::FinderEntryId) // PtypBinary -- PidTagFinderEntryId -- EntryID of the search Folder object
 					{
-						ltp::PTBinary bin = prop.as<ltp::PTBinary>();
+						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
 						flags |= 16;
 					}
-					else
-					{
-					
-					}
 				}
-				ASSERT( ( (flags & 0x1F) == 0x1F), "MessageStore is missing one or more required properties");
+				return ((flags & 0x1F) == 0x1F);
 			}
+				
 
 		private:
 			core::NID& m_nid;
 			ndb::NBTEntry m_nbtentry;
 			ndb::NDB& m_ndb;
+			std::map<types::PidTagType, ltp::Property> m_properties;
 		};
 
 
@@ -137,6 +192,7 @@ namespace reader
 				: m_ltp(ltp), m_ndb(ndb)
 			{
 				MessageStore store(core::NID_MESSAGE_STORE, ndb);
+				Folder rootFolder(store.as<EntryID>(types::PidTagType::IpmSubTreeEntryId).nid, ndb);
 			}
 		private:
 			ltp::LTP& m_ltp;
