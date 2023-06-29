@@ -487,8 +487,11 @@ namespace reader {
                 case 0x0E33: return types::PidTagType::ReplChangenum;
                 case 0x0E34: return types::PidTagType::ReplVersionHistory;
                 case 0x0E38: return types::PidTagType::ReplFlags;
+                case 0x3613: return types::PidTagType::ContainerClass;
                 default:
                     //ASSERT(false, "Invalid PidTagType");
+                    //return types::PidTagType::Unknown;
+                    LOG("[WARNING] Unknown PidTagType: [%X] returned", id);
                     return types::PidTagType::Unknown;
             }
         }

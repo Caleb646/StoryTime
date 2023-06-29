@@ -37,23 +37,68 @@ namespace reader
 		class Folder
 		{
 		public:
-			Folder(core::NID nid, ndb::NDB& ndb)
-				: m_nid(nid), m_ndb(ndb)
+			static Folder Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				std::map<types::NIDType, ndb::NBTEntry> nbtentries = m_ndb.all(m_nid);
+				std::map<types::NIDType, ndb::NBTEntry> nbtentries = ndb->all(nid);
 				ASSERT((nbtentries.size() == 4), "[ERROR] A Folder must be composed of 4 Parts");
 				ASSERT((nbtentries.count(types::NIDType::NORMAL_FOLDER) == 1), "[ERROR] A Folder must have a NORMAL_FOLDER");
 				ASSERT((nbtentries.count(types::NIDType::HIERARCHY_TABLE) == 1), "[ERROR] A Folder must have a HIERARCHY_TABLE");
 				ASSERT((nbtentries.count(types::NIDType::CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a CONTENTS_TABLE");
 				ASSERT((nbtentries.count(types::NIDType::ASSOC_CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a ASSOC_CONTENTS_TABLE");
 
-				ltp::TableContext hier(nbtentries.at(types::NIDType::HIERARCHY_TABLE).nid, m_ndb);
+				ltp::PropertyContext normal = ltp::PropertyContext::Init(nbtentries.at(types::NIDType::NORMAL_FOLDER).nid, ndb);
+				ltp::TableContext hier = ltp::TableContext::Init(nbtentries.at(types::NIDType::HIERARCHY_TABLE).nid, ndb);
+				//ltp::TableContext hier = ltp::TableContext::Init(core::NID(0x60D), ndb);
+				ltp::TableContext contents = ltp::TableContext::Init(nbtentries.at(types::NIDType::CONTENTS_TABLE).nid, ndb);
+				ltp::TableContext assoc = ltp::TableContext::Init(nbtentries.at(types::NIDType::ASSOC_CONTENTS_TABLE).nid, ndb);
+
+
+				ASSERT((normal.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				ASSERT((normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+
+
+				ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+
+				return Folder(nid, ndb, std::move(normal), std::move(hier), std::move(contents), std::move(assoc));
 			}
 
+		private:
+			Folder(
+				core::NID nid, 
+				core::Ref<const ndb::NDB> ndb,
+				ltp::PropertyContext&& normal,
+				ltp::TableContext&& hier,
+				ltp::TableContext&& contents,
+				ltp::TableContext&& assoc
+				)
+				: m_nid(nid), m_ndb(ndb),  m_normal(std::move(normal)), 
+				  m_hier(std::move(hier)), m_contents(std::move(contents)), 
+				  m_assoc(std::move(assoc))
+			{
+
+			}
 
 		private:
 			core::NID m_nid;
-			ndb::NDB& m_ndb;
+			core::Ref<const ndb::NDB> m_ndb;
+			ltp::PropertyContext m_normal;
+			ltp::TableContext m_hier;
+			ltp::TableContext m_contents;
+			ltp::TableContext m_assoc;
 		};
 
 		struct EntryID
@@ -80,8 +125,35 @@ namespace reader
 		class MessageStore
 		{
 		public:
-			MessageStore(core::NID nid, ndb::NDB& ndb)
-				: m_nid(nid), m_ndb(ndb)
+			static MessageStore Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
+			{
+				static_assert(std::is_move_constructible_v<MessageStore>, "Property context must be move constructible");
+				static_assert(std::is_move_assignable_v<MessageStore>, "Property context must be move constructible");
+				static_assert(std::is_copy_constructible_v<MessageStore>, "Property context must be move constructible");
+				static_assert(std::is_copy_assignable_v<MessageStore>, "Property context must be move constructible");
+				return MessageStore(nid, ndb, std::move(ltp::PropertyContext::Init(nid, ndb)));
+			}
+
+		public:
+			template<typename PropType>
+			PropType as(types::PidTagType pt)
+			{
+				if constexpr (std::is_same_v<PropType, EntryID>)
+				{
+					return EntryID(
+						m_pc.at(pt).asPTBinary().data,
+						m_pc.at(types::PidTagType::RecordKey).asPTBinary().data
+					);
+				}
+				else
+				{
+					return m_pc.at(pt).as<PropType>();
+				}
+			}
+
+		private:
+			MessageStore(core::NID nid, core::Ref<const ndb::NDB> ndb, ltp::PropertyContext&& pc)
+				: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc))
 			{
 				/*
 				* Property identifier		Property type		Friendly name				Description
@@ -95,108 +167,36 @@ namespace reader
 				_init();
 			}
 
-		public:
-			template<typename PropType>
-			PropType as(types::PidTagType pt)
-			{
-				if constexpr (std::is_same_v<PropType, EntryID>)
-				{
-					return EntryID(
-						m_properties.at(pt).asPTBinary().data,
-						m_properties.at(types::PidTagType::RecordKey).asPTBinary().data
-					);
-				}
-				else
-				{
-					return m_properties.at(pt).as<PropType>();
-				}
-			}
-
-			bool has(types::PidTagType pt)
-			{
-				return m_properties.count(pt) > 0;
-			}
-
-		private:
 			void _init()
 			{
-				m_nbtentry = m_ndb.get(m_nid);
-				ndb::BBTEntry bbtentry = m_ndb.get(m_nbtentry.bidData);
-				ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				ltp::HN hn(dataTree, m_nbtentry);
-				ltp::PropertyContext pc(m_ndb, hn);
-
-				for (const ltp::Property& prop : pc)
-				{
-					types::PidTagType pt = utils::PidTagType(prop.id);
-					if (pt == types::PidTagType::Unknown)
-					{
-						LOG("[WARN] Unknown property found in MessageStore in hex: [%X]", prop.id);
-						continue;
-					}
-					ASSERT((m_properties.count(pt) == 0), "[ERROR] Duplicate property found in MessageStore");
-					m_properties[pt] = prop;
-				}
-				ASSERT(_hasMinimumRequiredProperties() == true, "[ERROR] MessageStore does not have minimum required properties");
+				ASSERT((m_pc.valid(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((m_pc.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				ASSERT((m_pc.valid(types::PidTagType::IpmSubTreeEntryId, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((m_pc.valid(types::PidTagType::IpmWastebasketEntryId, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((m_pc.valid(types::PidTagType::FinderEntryId, types::PropertyType::Binary)), "[ERROR]");
 				LOG("[INFO] Message Store Display Name: [%s]", 
 					as<ltp::PTString>(types::PidTagType::DisplayName).data.c_str());
 			}
 
-			bool _hasMinimumRequiredProperties()
-			{
-				uint8_t flags{ 0 };
-				for (const auto& [pt, prop] : m_properties)
-				{
-					if (pt == types::PidTagType::RecordKey) // PtypBinary -- PidTagRecordKey -- Record key. This is the Provider UID of this PST.
-					{
-						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
-						flags |= 1;
-					}
-					else if (pt == types::PidTagType::DisplayName) // PtypString -- PidTagDisplayName -- Display name of PST
-					{
-						ASSERT((prop.propType == types::PropertyType::String), "PropType is not String");
-						flags |= 2;
-					}
-					else if (pt == types::PidTagType::IpmSubTreeEntryId) // PtypBinary -- PidTagIpmSubTreeEntryId -- EntryID of the Root Mailbox Folder object
-					{
-						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
-						flags |= 4;
-					}
-					else if (pt == types::PidTagType::IpmWastebasketEntryId) // PtypBinary -- PidTagIpmWastebasketEntryId -- EntryID of the Deleted Items Folder object
-					{
-						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
-						flags |= 8;
-					}
-					else if (pt == types::PidTagType::FinderEntryId) // PtypBinary -- PidTagFinderEntryId -- EntryID of the search Folder object
-					{
-						ASSERT((prop.propType == types::PropertyType::Binary), "PropType is not PtypBinary");
-						flags |= 16;
-					}
-				}
-				return ((flags & 0x1F) == 0x1F);
-			}
-				
-
 		private:
-			core::NID& m_nid;
-			ndb::NBTEntry m_nbtentry;
-			ndb::NDB& m_ndb;
-			std::map<types::PidTagType, ltp::Property> m_properties;
+			core::NID m_nid;
+			core::Ref<const ndb::NDB> m_ndb;
+			ltp::PropertyContext m_pc;
 		};
 
 
 		class Messaging
 		{
 		public:
-			Messaging(ltp::LTP& ltp, ndb::NDB& ndb)
-				: m_ltp(ltp), m_ndb(ndb)
+			Messaging(core::Ref<const ndb::NDB> ndb, core::Ref<const ltp::LTP> ltp)
+				: m_ndb(ndb), m_ltp(ltp)
 			{
-				MessageStore store(core::NID_MESSAGE_STORE, ndb);
-				Folder rootFolder(store.as<EntryID>(types::PidTagType::IpmSubTreeEntryId).nid, ndb);
+				MessageStore store = MessageStore::Init(core::NID_MESSAGE_STORE, ndb);
+				Folder rootFolder = Folder::Init(store.as<EntryID>(types::PidTagType::IpmSubTreeEntryId).nid, ndb);
 			}
 		private:
-			ltp::LTP& m_ltp;
-			ndb::NDB& m_ndb;
+			core::Ref<const ltp::LTP> m_ltp;
+			core::Ref<const ndb::NDB> m_ndb;
 		};
 	} // namespace msg
 }

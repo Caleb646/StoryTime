@@ -663,7 +663,7 @@ namespace reader {
 				return true;
 			}
 
-            std::map<types::NIDType, NBTEntry> all(core::NID nid)
+            std::map<types::NIDType, NBTEntry> all(core::NID nid) const
             {
                 std::map<types::NIDType, NBTEntry> entries{};
                 for (size_t i = 0; i < m_pages.size(); i++)
@@ -689,7 +689,7 @@ namespace reader {
             }
 
             template<typename NIDorBID>
-            LeafEntryType get(NIDorBID id)
+            LeafEntryType get(NIDorBID id) const
             {
                 //if constexpr (std::is_same_v<NIDorBID, core::NID>)
                 //    static_assert(std::is_same_v<LeafEntryType, NBTEntry>, "NID can only be used with Node BTree");
@@ -812,13 +812,13 @@ namespace reader {
                 _init();
             }
 
-            std::map<types::NIDType, NBTEntry> all(core::NID nid)
+            std::map<types::NIDType, NBTEntry> all(core::NID nid) const
 			{
 				return m_rootNBT.all(nid);
 			}
 
             template<typename NIDorBID>
-            auto get(NIDorBID id)
+            auto get(NIDorBID id) const
             {
                 if constexpr(NIDorBID::id() == core::NID::id())
 					return m_rootNBT.get(id);
@@ -876,7 +876,7 @@ namespace reader {
              * @param blockSize
              * @return
             */
-            DataTree readDataTree(core::BREF blockBref, int64_t sizeofBlockData)
+            DataTree readDataTree(core::BREF blockBref, int64_t sizeofBlockData) const
             {
                 /*
                 * data (variable): Raw data.
@@ -1012,7 +1012,8 @@ namespace reader {
                 return BTPage::readBTPage(utils::readBytes(m_file, 512), treeType, parentCLevel, &btpageBref);
             }
 
-            BlockTrailer _readBlockTrailer(const std::vector<types::byte_t>& bytes, const core::BREF* const bref = nullptr)
+            BlockTrailer _readBlockTrailer(
+                const std::vector<types::byte_t>& bytes, const core::BREF* const bref = nullptr) const
             {
                 ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
 
@@ -1039,13 +1040,15 @@ namespace reader {
                 if (bref != nullptr)
                 {
                     auto computedSig = utils::ms::ComputeSig(bref->ib, bref->bid.getBidRaw());
-                    ASSERT(std::cmp_equal(trailer.wSig, computedSig), "[ERROR] Page Sig [%i] != Computed Sig [%i]", trailer.wSig, computedSig);
+                    ASSERT(std::cmp_equal(trailer.wSig, computedSig), 
+                        "[ERROR] Page Sig [%i] != Computed Sig [%i]", trailer.wSig, computedSig);
                 }
 
                 return trailer;
             }
 
-            DataBlock _readDataBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize)
+            DataBlock _readDataBlock(
+                const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize) const
             {
                 ASSERT(std::cmp_equal(blockBytes.size(), blockSize), "[ERROR] blockBytes.size() != blockSize");
                 std::vector<types::byte_t> data = utils::slice(blockBytes, 0ll, trailer.cb, trailer.cb);
@@ -1073,7 +1076,7 @@ namespace reader {
                 return block;
             }
 
-            XBlock _readXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer)
+            XBlock _readXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer) const
             {
                 XBlock block{};
                 block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
@@ -1098,7 +1101,7 @@ namespace reader {
                 return block;
             }
 
-            XXBlock _readXXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer)
+            XXBlock _readXXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer) const
             {
                 XXBlock block{};
                 block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);

@@ -60,7 +60,9 @@ namespace reader {
 			{
 				ASSERT(((types::NIDType)getHIDType() == types::NIDType::HID),
 					"[ERROR] Invalid HID Type");
-				ASSERT((getHIDAllocIndex() > 0), "[ERROR]");
+
+				// hidRoot for the BTH Header can be 0 if the BTH is empty
+				//ASSERT((getHIDAllocIndex() > 0), "[ERROR]");
 			}
 		private:
 			size_t m_hid;
@@ -338,7 +340,8 @@ namespace reader {
 			/// explanation of the mapping mechanism will be discussed in section 2.3.4.4.1. 
 			uint8_t iBit{};
 
-			uint32_t propId() const noexcept { return tag & 0xFFFF0000; }
+			//uint32_t propId() const noexcept { return tag & 0xFFFF0000; }
+			uint32_t propId() const noexcept { return (tag & 0xFFFF0000) >> 16; }
 			uint32_t propType() const noexcept { return tag & 0xFFFF; }
 		};
 
@@ -622,22 +625,27 @@ namespace reader {
 		class HN 
 		{
 		public:
-			HN() = default;
+			//HN() = default;
 
-			HN(ndb::DataTree& dTree, ndb::NBTEntry nbt)
-				: m_nbt(nbt)
+			static HN Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				m_hnhdr = readHNHDR(dTree.first().data, 0, dTree.size());
+				static_assert(std::is_move_constructible_v<HN>, "HN must be move constructible");
+				static_assert(std::is_move_assignable_v<HN>, "HN must be move assignable");
+				static_assert(std::is_copy_constructible_v<HN>, "HN must be copy constructible");
+				static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
+				ndb::NBTEntry nbt = ndb->get(nid);
+				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
+				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
+				return HN(nid, dataTree);
+			}
 
-				HNBlock block{};
-				block.map = readHNPageMap(dTree.first().data, m_hnhdr.ibHnpm);
-				block.data = dTree.first().data;
-				m_blocks.push_back(block);
-
-				for (size_t i = 1; i < dTree.dataBlocks.size(); i++)
-				{
-					addBlock(dTree.dataBlocks.at(i).data, i);
-				}
+			static HN Init(core::NID nid, const ndb::DataTree& dataTree)
+			{
+				static_assert(std::is_move_constructible_v<HN>, "HN must be move constructible");
+				static_assert(std::is_move_assignable_v<HN>, "HN must be move assignable");
+				static_assert(std::is_copy_constructible_v<HN>, "HN must be copy constructible");
+				static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
+				return HN(nid, dataTree);
 			}
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
@@ -815,17 +823,40 @@ namespace reader {
 				ASSERT((hdr.rgbFillLevel.size() == 128), "[ERROR]");
 				return hdr;
 			}
+
 			private:
+				HN(core::NID nid, const ndb::DataTree& dTree)
+					: m_nid(nid)
+				{
+					m_hnhdr = readHNHDR(dTree.first().data, 0, dTree.size());
+
+					HNBlock block{};
+					block.map = readHNPageMap(dTree.first().data, m_hnhdr.ibHnpm);
+					block.data = dTree.first().data;
+					m_blocks.push_back(block);
+
+					for (size_t i = 1; i < dTree.dataBlocks.size(); i++)
+					{
+						addBlock(dTree.dataBlocks.at(i).data, i);
+					}
+				}
+
+			private:
+				core::NID m_nid;
 				HNHDR m_hnhdr;
 				std::vector<HNBlock> m_blocks;
-				ndb::NBTEntry m_nbt{};
 		};
 
 		class BTreeHeap
 		{
 		public:
-			BTreeHeap(const HN& hn, HID bthHeaderHID) : m_hn(hn) 
+			//BTreeHeap() = default;
+			BTreeHeap(core::Ref<const HN> hn, HID bthHeaderHID) : m_hn(hn) 
 			{ 
+				static_assert(std::is_move_constructible_v<BTreeHeap>, "BTreeHeap must be move constructible");
+				static_assert(std::is_move_assignable_v<BTreeHeap>, "BTreeHeap must be move assignable");
+				static_assert(std::is_copy_constructible_v<BTreeHeap>, "BTreeHeap must be copy constructible");
+				static_assert(std::is_copy_assignable_v<BTreeHeap>, "BTreeHeap must be copy assignable");
 				_init(bthHeaderHID);
 			}
 
@@ -837,11 +868,17 @@ namespace reader {
 				header.cbKey = utils::slice(bytes, 1, 2, 1, utils::toT_l<int16_t>);
 				header.cbEnt = utils::slice(bytes, 2, 3, 1, utils::toT_l<int16_t>);
 				header.bIdxLevels = utils::slice(bytes, 3, 4, 1, utils::toT_l<int16_t>);
+				/// hidRoot can be equal to zero if the BTH is empty
 				header.hidRoot = HID(utils::slice(bytes, 4, 8, 4));
 
 				ASSERT(((types::BType)header.bType == types::BType::BTH), "[ERROR] Invalid BTree on Heap");
 				ASSERT((utils::isIn(header.cbKey, { 2, 4, 8, 16 })), "[ERROR]");
 				ASSERT((header.cbEnt > 0 && header.cbEnt <= 32), "[ERROR]");
+
+				if (header.hidRoot.getHIDRaw() > 0)
+				{
+					ASSERT( (header.hidRoot.getHIDAllocIndex() > 0), "[ERROR] Invalid Allocation Index");
+				}
 				return header;
 			}
 
@@ -872,6 +909,11 @@ namespace reader {
 				return records;
 			}
 
+			bool empty() const
+			{
+				return m_header.hidRoot.getHIDRaw() == 0;
+			}
+
 			HID hidRoot() const
 			{
 				return m_header.hidRoot;
@@ -899,17 +941,22 @@ namespace reader {
 		private:
 			void _init(HID bthHeaderHID)
 			{
-				std::vector<types::byte_t> headerBytes = m_hn.alloc(bthHeaderHID);
+				std::vector<types::byte_t> headerBytes = m_hn->alloc(bthHeaderHID);
 				m_header = readBTHHeader(headerBytes);
-				m_records = readBTHRecords(
-					m_hn.alloc(m_header.hidRoot),
-					m_header.cbKey,
-					//m_header.bIdxLevels,
-					m_header.cbEnt
-				);
+
+				if (m_header.hidRoot.getHIDRaw() > 0) // If hidRoot is zero, the BTH is empty
+				{
+					m_records = readBTHRecords(
+						m_hn->alloc(m_header.hidRoot),
+						m_header.cbKey,
+						//m_header.bIdxLevels,
+						m_header.cbEnt
+					);
+				}
+
 			}
 		private:
-			HN m_hn;
+			core::Ref<const HN> m_hn;
 			BTHHeader m_header;
 			std::vector<Record> m_records;
 		};
@@ -1043,11 +1090,20 @@ namespace reader {
 		class PropertyContext
 		{
 		public:
-			PropertyContext() = default;
-			PropertyContext(ndb::NDB& ndb, HN& hn)
-				: m_hn(hn), m_bth(hn, hn.getHeader().hidUserRoot), m_ndb(ndb)
+			using PropertyID_t = uint32_t;
+		public:
+			//PropertyContext() = default;
+
+			static PropertyContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				_init();
+				static_assert(std::is_move_constructible_v<PropertyContext>, "PropertyContext must be move constructible");
+				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
+				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
+				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
+				ndb::NBTEntry nbt = ndb->get(nid);
+				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
+				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
+				return PropertyContext(nid, ndb, HN::Init(nid, dataTree));
 			}
 
 			auto begin()
@@ -1060,7 +1116,31 @@ namespace reader {
 				return m_properties.end();
 			}
 
-			std::vector<Property> readProperties()
+			template<typename PropIDType>
+			const Property& at(PropIDType propID) const
+			{
+				return m_properties.at(_convert(propID));
+			}
+
+			template<typename PropIDType>
+			bool exists(PropIDType propID) const
+			{
+				return m_properties.count(_convert(propID)) > 0;
+			}
+
+			template<typename PropIDType>
+			bool is(PropIDType propID, types::PropertyType propType) const
+			{
+				return m_properties.at(_convert(propID)).propType == propType;
+			}
+
+			template<typename PropIDType>
+			bool valid(PropIDType propID, types::PropertyType propType) const
+			{
+				return exists(propID) && is(propID, propType);
+			}
+
+			void readProperties()
 			{
 				for (const auto& record : m_records)
 				{
@@ -1075,25 +1155,32 @@ namespace reader {
 					if (info.isFixed && info.singleEntrySize <= 4) // Data Value
 					{
 						prop.data = record.dwValueHnid;
-						m_properties.push_back(prop);
 					}
 															// check if HID 
 					else if ( (info.isFixed && info.singleEntrySize > 4) || (record.dwValueHnid[0] & 0x1F) == 0) // HID
 					{
 						HID id = HID(record.dwValueHnid);
 						prop.data = m_hn.alloc(id);
-						m_properties.push_back(prop);
 					}
 					else // NID
 					{
 						ASSERT(false, "[ERROR] NID not implemented yet");
 					}
+
+					ASSERT((m_properties.count(prop.id) == 0), "[ERROR] Duplicate property found");
+					m_properties[prop.id] = prop;
 				}
 				ASSERT((m_properties.size() == m_records.size()), "[ERROR] Invalid size");
-				return m_properties;
+			}
+	
+		private:
+
+			PropertyContext(core::NID nid, core::Ref<const ndb::NDB> ndb, HN&& hn)
+				: m_nid(nid), m_ndb(ndb), m_hn(hn), m_bth(core::Ref<const HN>(m_hn), m_hn.getHeader().hidUserRoot)
+			{
+				_init();
 			}
 
-		private:
 			void _init()
 			{
 				ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
@@ -1105,12 +1192,28 @@ namespace reader {
 				}
 				readProperties();
 			}
+
+			template<typename PropIDType>
+			PropertyID_t _convert(PropIDType id) const
+			{
+				if constexpr (std::is_same_v<PropIDType, PropertyID_t>)
+					return id;
+
+				else if constexpr (std::is_same_v<PropIDType, types::PidTagType>)
+					return static_cast<PropertyID_t>(id);
+
+				else
+					ASSERT(false, "[ERROR] Invalid PropIDType");
+			}
+
 		private:
 			std::vector<PCBTHRecord> m_records{};
-			std::vector<Property> m_properties{};
-			BTreeHeap m_bth;
+			std::map<PropertyID_t, Property> m_properties{};
+			core::NID m_nid;
+			core::Ref<const ndb::NDB> m_ndb;
 			HN m_hn;
-			ndb::NDB& m_ndb;
+			BTreeHeap m_bth; /// m_bth has to be initialized after m_hn
+			
 		};
 
 		class RowBlock
@@ -1145,50 +1248,33 @@ namespace reader {
 		{
 
 		public:
-			TableContext(core::NID nid, ndb::NDB& ndb)
-				: m_nid(nid), m_ndb(ndb)
+			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				ndb::NBTEntry nbt = m_ndb.get(m_nid);
-				ndb::BBTEntry bbt = m_ndb.get(nbt.bidData);
-				ndb::DataTree dataTree = m_ndb.readDataTree(bbt.bref, bbt.cb);
-				//HN hn(dataTree, nbt);
-				m_hn = std::move(HN(dataTree, nbt));
-				ASSERT((m_hn.getHeader().bClientSig == utils::cast<int64_t>(types::BType::TC)), "[ERROR]");
+				static_assert(std::is_move_constructible_v<TableContext>, "TableContext must be move constructible");
+				static_assert(std::is_move_assignable_v<TableContext>, "TableContext must be move assignable");
+				static_assert(std::is_copy_constructible_v<TableContext>, "TableContext must be copy constructible");
+				static_assert(std::is_copy_assignable_v<TableContext>, "TableContext must be copy assignable");
+				ndb::NBTEntry nbt = ndb->get(nid);
+				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
+				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
+				HN hn = HN::Init(nid, dataTree);
+				return TableContext(nid, ndb, std::move(hn), nbt);
+			}
 
-				m_header = readTCInfo(m_hn.alloc(m_hn.getHeader().hidUserRoot));
-				BTreeHeap bth(m_hn, m_header.hidRowIndex);
-				ASSERT((bth.keySize() == 4), "[ERROR]");
-				ASSERT((bth.dataSize() == 4), "[ERROR]");
-
-				if (m_header.hnidRows.isHID() && nbt.bidSub == 0) // Row Matrix is in the HN
+			bool hasCol(types::PidTagType propID, types::PropertyType propType) const
+			{
+				uint32_t propID_ = static_cast<uint32_t>(propID);
+				uint32_t propType_ = static_cast<uint32_t>(propType);
+				for(const auto& col : m_header.rgTCOLDESC)
 				{
-					auto rowBlockBytes = m_hn.alloc(m_header.hnidRows.as<HID>());
-					m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
-					/// This check only works for HID allocated Row Matrices
-					ASSERT((m_rowsPerBlock == bth.nrecords()), "[ERROR] Invalid number of rows per block");
-					
-					m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
+					uint32_t colTag = col.tag;
+					uint32_t colPropId = col.propId();
+					uint32_t colPropType = col.propType();
+					if (colPropId == propID_)
+						if(colPropType == propType_)
+							return true;
 				}
-
-				else // Row Matrix must be in a subnode id'ed by a NID
-				{
-					/// Each block except the last one MUST have a size of 8192 bytes.
-					ASSERT(false, "[ERROR] Not implemented yet");
-				}
-
-				for(const auto& record : bth.records())
-				{
-					m_rowIDs.push_back(record.as<TCRowID>());
-				}
-
-				// Testing only
-				const RowData& rowdata = at(m_rowIDs.at(0));
-				Property prop = at(m_rowIDs.at(0), 0);
-				at(m_rowIDs.at(1), 1);
-				at(m_rowIDs.at(1), 2);
-				at(m_rowIDs.at(1), 3);
-				at(m_rowIDs.at(1), 4);
-				at(m_rowIDs.at(1), 5);
+				return false;
 			}
 
 			const RowData& at(TCRowID rowID) const
@@ -1314,8 +1400,54 @@ namespace reader {
 			}
 
 		private:
+			TableContext(
+				core::NID nid, core::Ref<const ndb::NDB> ndb, HN&& hn, const ndb::NBTEntry& nbt)
+				: m_nid(nid), m_ndb(ndb), m_hn((std::move(hn)))
+			{
+				ASSERT((m_hn.getBType() == types::BType::TC), "[ERROR]");
+
+				m_header = readTCInfo(m_hn.alloc(m_hn.getHeader().hidUserRoot));
+				BTreeHeap bth(m_hn, m_header.hidRowIndex);
+				ASSERT((bth.keySize() == 4), "[ERROR]");
+				ASSERT((bth.dataSize() == 4), "[ERROR]");
+
+				if (!bth.empty())
+				{
+					if (m_header.hnidRows.isHID() && nbt.bidSub == 0) // Row Matrix is in the HN
+					{
+						auto rowBlockBytes = m_hn.alloc(m_header.hnidRows.as<HID>());
+						m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
+						/// This check only works for HID allocated Row Matrices
+						ASSERT((m_rowsPerBlock == bth.nrecords()), "[ERROR] Invalid number of rows per block");
+
+						m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
+					}
+
+					else // Row Matrix must be in a subnode id'ed by a NID
+					{
+						/// Each block except the last one MUST have a size of 8192 bytes.
+						ASSERT(false, "[ERROR] Not implemented yet");
+					}
+
+					for (const auto& record : bth.records())
+					{
+						m_rowIDs.push_back(record.as<TCRowID>());
+					}
+				}
+				// Testing only
+				//const RowData& rowdata = at(m_rowIDs.at(0));
+				//Property prop = at(m_rowIDs.at(0), 0);
+				//at(m_rowIDs.at(1), 1);
+				//at(m_rowIDs.at(1), 2);
+				//at(m_rowIDs.at(1), 3);
+				//at(m_rowIDs.at(1), 4);
+				//at(m_rowIDs.at(1), 5);
+			}
+
+
+		private:
 			core::NID m_nid;
-			ndb::NDB& m_ndb;
+			core::Ref<const ndb::NDB> m_ndb;
 			uint64_t m_rowsPerBlock;
 			std::vector<RowBlock> m_rowBlocks;
 			std::vector<TCRowID> m_rowIDs;
@@ -1326,37 +1458,9 @@ namespace reader {
 		class LTP
 		{
 		public:
-			LTP(ndb::NDB& ndb) : m_ndb(ndb)
-			{
-				_init();
-			}
-		public:
-			void _init()
-			{
-
-				////ndb::NBTEntry nbtentry = m_ndb.get(core::NID_ROOT_FOLDER);
-				//ndb::NBTEntry nbtentry = m_ndb.get(core::NID_MESSAGE_STORE);
-				//ndb::BBTEntry bbtentry = m_ndb.get(nbtentry.bidData);
-				////LOG("[INFO] %i", utils::ms::ComputeSig(bbtentry.bref.ib, bbtentry.bref.bid.getBidRaw()));
-				//ndb::DataTree dataTree = m_ndb.readDataTree(bbtentry.bref, bbtentry.cb);
-				//HN hn = readHN(dataTree, nbtentry);
-				//PropertyContext pc(m_ndb, hn);
-			}
-
-			//static HN readHN(ndb::DataTree& tree, ndb::NBTEntry entry)
-			//{
-			//	ASSERT(tree.isValid(), "[ERROR] Invalid Data Tree");
-			//	HN hn(tree.dataBlocks.at(0).data, entry, tree.dataBlocks.size());
-			//	//uint32_t bthPos = map.rgibAlloc.at(hdr.hidUserRoot.getHIDBlockIndex());
-			//	for (size_t i = 1; i < tree.dataBlocks.size(); i++)
-			//	{
-			//		hn.addBlock(tree.dataBlocks.at(i).data, i);
-			//	}
-			//	return hn;
-			//}
-
+			LTP(core::Ref<const ndb::NDB> ndb) : m_ndb(ndb) {}
 		private:
-			ndb::NDB& m_ndb;
+			core::Ref<const ndb::NDB> m_ndb;
 		};
 	}
 }

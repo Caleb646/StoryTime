@@ -155,6 +155,8 @@ namespace reader {
             PstPassword               =   0x67FF,       /// PtypInteger32
             MapiFormComposeCommand    =   0x682F,       /// PtypString
 
+            ContainerClass            =   0x3613,       /// PtypBinary
+
             ReplItemid                =   0x0E30, /// PtypInteger32  Replication Item ID.N
             ReplChangenum             =   0x0E33, /// PtypInteger64  Replication Change Number.N
             ReplVersionHistory        =   0x0E34, /// PtypBinary  Replication Version History.N

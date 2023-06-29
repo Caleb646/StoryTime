@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <utility>
+#include <algorithm>
 #include <type_traits>
 
 #include "types.h"
@@ -246,6 +248,16 @@ namespace reader {
         struct Header
         {
             Root root{};
+        };
+
+        template<typename T>
+        class Ref
+        {
+        public :
+            Ref(T& t) : m_ref(t) {}
+            T* operator->() { return &m_ref.get(); }
+        private:
+            std::reference_wrapper<T> m_ref;
         };
 	}
 }

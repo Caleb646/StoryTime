@@ -31,9 +31,13 @@ namespace reader
         void read()
         {
             _open(m_path);
+            //std::shared_ptr<const ndb::NDB> ndb = std::make_shared<const ndb::NDB>(m_file, _readHeader(m_file));
+            //std::shared_ptr<const ltp::LTP> ltp = std::make_shared<const ltp::LTP>(ndb);
+            //msg::Messaging msg(ltp, ndb);
+
             ndb::NDB ndb(m_file, _readHeader(m_file));
-            ltp::LTP ltp(ndb);
-            msg::Messaging msg(ltp, ndb);
+            ltp::LTP ltp(core::Ref<const ndb::NDB>{ndb});
+            msg::Messaging msg(core::Ref<const ndb::NDB>{ndb}, core::Ref<const ltp::LTP>{ltp});
         }
 
     private:
