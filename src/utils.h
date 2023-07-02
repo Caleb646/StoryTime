@@ -65,7 +65,7 @@ namespace reader {
             0xCC,
         };
 
-        std::vector<int64_t> PROPERTY_TYPE_VALUES = {
+        std::vector<uint32_t> PROPERTY_TYPE_VALUES = {
             0x0002,
             0x0003,
             0x0004,
@@ -296,9 +296,9 @@ namespace reader {
         };
 
         template<typename T>
-        PTInfo PropertyTypeInfo(T id)
+        PTInfo PropertyTypeInfo(T pid)
         {
-            switch (cast<types::PropertyType>(id))
+            switch (cast<types::PropertyType>(pid))
             {
                 case types::PropertyType::Integer16              : return PTInfo{ false, true, 2 }; // fixed length and only a single 2 byte entry
                 case types::PropertyType::Integer32              : return PTInfo{ false, true, 4 };
@@ -370,9 +370,9 @@ namespace reader {
             }
         }
 
-        types::PropertyType PropertyType(size_t id)
+        types::PropertyType PropertyType(uint32_t pid)
         {
-            switch (id)
+            switch (pid)
             {
             case 0x0002: return types::PropertyType::Integer16           ;
             case 0x0003: return types::PropertyType::Integer32           ;
@@ -413,9 +413,9 @@ namespace reader {
         }
 
         template<typename T>
-        const char* PropertyTypeChar(T id)
+        const char* PropertyTypeChar(T pid)
         {
-            switch ((size_t)id)
+            switch (static_cast<uint32_t>(pid))
             {
             case 0x0002: return "PtypInteger16;           ";
             case 0x0003: return "PtypInteger32;           ";
@@ -488,51 +488,31 @@ namespace reader {
                 case 0x0E34: return types::PidTagType::ReplVersionHistory;
                 case 0x0E38: return types::PidTagType::ReplFlags;
                 case 0x3613: return types::PidTagType::ContainerClass;
+                case 0x0017: return types::PidTagType::Importance                  ;
+                case 0x001A: return types::PidTagType::MessageClassW               ;
+                case 0x0036: return types::PidTagType::Sensitivity                 ;
+                case 0x0037: return types::PidTagType::SubjectW                    ;
+                case 0x0039: return types::PidTagType::ClientSubmitTime            ;
+                case 0x0042: return types::PidTagType::SentRepresentingNameW       ;
+                case 0x0057: return types::PidTagType::MessageToMe                 ;
+                case 0x0058: return types::PidTagType::MessageCcMe                 ;
+                case 0x0070: return types::PidTagType::ConversationTopicW          ;
+                case 0x0071: return types::PidTagType::ConversationIndex           ;
+                case 0x0E03: return types::PidTagType::DisplayCcW                  ;
+                case 0x0E04: return types::PidTagType::DisplayToW                  ;
+                case 0x0E06: return types::PidTagType::MessageDeliveryTime         ;
+                case 0x0E07: return types::PidTagType::MessageFlags                ;
+                case 0x0E08: return types::PidTagType::MessageSize                 ;
+                case 0x0E17: return types::PidTagType::MessageStatus               ;
+                case 0x0E3C: return types::PidTagType::ReplCopiedfromVersionhistory;
+                case 0x0E3D: return types::PidTagType::ReplCopiedfromItemid        ;
+
                 default:
                     //ASSERT(false, "Invalid PidTagType");
                     //return types::PidTagType::Unknown;
                     LOG("[WARNING] Unknown PidTagType: [%X] returned", id);
                     return types::PidTagType::Unknown;
             }
-        }
-
-        std::string toHex(const char byte)
-        {
-            static constexpr char HEXITS[] = "0123456789ABCDEF";
-            std::string str(4, '\0');
-            auto k = str.begin();
-            *k++ = '0';
-            *k++ = 'x';
-            *k++ = HEXITS[byte >> 4];
-            *k++ = HEXITS[byte & 0x0F];
-            return str;
-        }
-
-        std::vector<std::string> toHexVector(const std::vector<types::byte_t>& bytes)
-        {
-            std::vector<std::string> hex(bytes.size());
-            for (auto b : bytes)
-            {
-                hex.push_back(toHex(b));
-            }
-            return hex;
-        }
-
-        std::string toHexString(const std::vector<types::byte_t>& bytes, const char delimiter = ' ')
-        {
-            static constexpr char HEXITS[] = "0123456789ABCDEF";
-
-            std::string str(5 * bytes.size(), '\0');
-            auto k = str.begin();
-
-            for (auto c : bytes) {
-                *k++ = '0';
-                *k++ = 'x';
-                *k++ = HEXITS[c >> 4];
-                *k++ = HEXITS[c & 0x0F];
-                *k++ = delimiter;
-            }
-            return str;
         }
 
         std::vector<types::byte_t> pad(const std::vector<types::byte_t>& bytes, int64_t bytesToAdd)
@@ -607,25 +587,13 @@ namespace reader {
             }
             else 
             {
-                ASSERT(false, "[ERROR] [bytes] &s vector can only be of size 2 to 4.", toHexString(bytes).c_str());
+                ASSERT(false, "[ERROR] Bytes could not be converted");
                 return T(-1);
             }
         }
-
-        bool isEqual(std::vector<types::byte_t> a, std::vector<types::byte_t> b, std::string name = "NOT SET", bool shouldFail = true)
-        {
-            bool e = a == b;
-            const char* msg = "[ERROR] [%s] [a] %s != [b] %s";
-
-            if (shouldFail)
-            {
-                ASSERT(e, msg, name.c_str(), toHexString(a).c_str(), toHexString(b).c_str());
-            }
-
-            return e;
-        }
-
-        bool isIn(int64_t a, std::vector<int64_t> b)
+        
+        template<typename T>
+        bool isIn(T a, const std::vector<T> b)
         {
             bool found = false;
             for (auto item : b)
@@ -654,18 +622,6 @@ namespace reader {
 			}
 			return bytes;
 		}
-
-        template<size_t Size>
-        std::array<types::byte_t, Size> toArray(const std::vector<types::byte_t>& v)
-        {
-            ASSERT((v.size() == Size), "[ERROR] Invalid array size [%i] != [%i]", v.size(), Size);
-            std::array<types::byte_t, Size> result;
-            for(size_t i = 0; i < v.size(); ++i)
-			{
-				result[i] = v[i];
-			}
-            return result;
-        }
 
         template<typename T>
         std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)
@@ -734,6 +690,8 @@ namespace reader {
         * 
         * 
         */
+        // NOLINTBEGIN
+
         namespace ms
         {
             // All of the algorithms below come from Microsofts documentation specifically here. 
@@ -1283,6 +1241,8 @@ namespace reader {
             }
 
         } // namespace ms
+
+        // NOLINTEND
 	}
 }
 

@@ -256,6 +256,7 @@ namespace reader {
         public :
             Ref(T& t) : m_ref(t) {}
             T* operator->() { return &m_ref.get(); }
+            T& get() { return m_ref.get(); }
         private:
             std::reference_wrapper<T> m_ref;
         };

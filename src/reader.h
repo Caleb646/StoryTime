@@ -92,21 +92,21 @@ namespace reader
             * 0x01 VALID_AMAP1 Deprecated. Implementations SHOULD NOT use this The AMaps are VALID.
             * 0x02 VALID_AMAP2 value. The AMaps are VALID.
             */
-            std::vector<types::byte_t> BREFNBT = utils::slice(bytes, 36, 52, 16);
-            std::vector<types::byte_t> BREFBBT = utils::slice(bytes, 52, 68, 16);
-            std::vector<types::byte_t> fAMapValid = utils::slice(bytes, 68, 69, 1);
-            LOG("[INFO] AMapValid state [is] %s", utils::toHexString(fAMapValid).c_str());
+            const std::vector<types::byte_t> BREFNBT = utils::slice(bytes, 36, 52, 16);
+            const std::vector<types::byte_t> BREFBBT = utils::slice(bytes, 52, 68, 16);
+            const uint8_t fAMapValid = utils::slice(bytes, 68, 69, 1, utils::toT_l<uint8_t>);
+            ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
             /*
             * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
             *  Creators of a new PST file MUST initialize this value to zero.
             */
-            std::vector<types::byte_t> bReserved = utils::slice(bytes, 69, 70, 1);
+            const std::vector<types::byte_t> bReserved = utils::slice(bytes, 69, 70, 1);
 
             /*
             * wReserved (2 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
             *  Creators of a new PST file MUST initialize this value to zero.
             */
-            std::vector<types::byte_t> wReserved = utils::slice(bytes, 70, 72, 2);
+            const std::vector<types::byte_t> wReserved = utils::slice(bytes, 70, 72, 2);
 
             core::Root myRoot{};
             myRoot.fileSize = ibFileEof;
@@ -121,13 +121,13 @@ namespace reader
             ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
             file.seekg(0);
             ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
-            std::vector<types::byte_t> bytes = utils::readBytes(file, 564);
+            const std::vector<types::byte_t> bytes = utils::readBytes(file, 564);
 
             /**
              * dwMagic (4 bytes): MUST be "{ 0x21, 0x42, 0x44, 0x4E } ("!BDN")". 
             */
-            std::vector<types::byte_t> dwMagic = utils::slice(bytes, 0, 4, 4);
-            utils::isEqual(dwMagic, { 0x21, 0x42, 0x44, 0x4E });
+            const uint32_t dwMagic = utils::slice(bytes, 0, 4, 4, utils::toT_l<uint32_t>);
+            utils::isIn(dwMagic, { 0x21, 0x42, 0x44, 0x4E });
 
             /**
              * dwCRCPartial (4 bytes): The 32-bit cyclic redundancy check (CRC) value 
@@ -138,8 +138,8 @@ namespace reader
             /**
              * wMagicClient (2 bytes): MUST be "{ 0x53, 0x4D }".  
             */
-            std::vector<types::byte_t> wMagicClient = utils::slice(bytes, 8, 10, 2);
-            utils::isEqual(wMagicClient, { 0x53, 0x4D });
+            const uint16_t wMagicClient = utils::slice(bytes, 8, 10, 2, utils::toT_l<uint16_t>);
+            utils::isIn(wMagicClient, { 0x53, 0x4D });
 
             /**
             * wVer (2 bytes):
@@ -283,8 +283,8 @@ namespace reader
            /*
            * bSentinel (1 types::byte_t): MUST be set to 0x80. 
            */
-           std::vector<types::byte_t> bSentinel = utils::slice(bytes, 512, 513, 1);
-           utils::isEqual(bSentinel, { 0x80 }, "bSentinel");
+           const uint8_t bSentinel = utils::slice(bytes, 512, 513, 1, utils::toT_l<uint8_t>);
+           utils::isIn(bSentinel, { 0x80 });
 
            /*
            * bCryptMethod (1 types::byte_t): Indicates how the data within the PST file is encoded. 
@@ -298,13 +298,13 @@ namespace reader
            */
            uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
            ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "[ERROR] Invalid Encryption");
-           LOG("[bCryptMethod] %s", utils::toHex(bCryptMethod).c_str());
+           LOG("[bCryptMethod] %X", bCryptMethod);
             
            /*
            * rgbReserved (2 bytes): Reserved; MUST be set to zero.
            */
-           std::vector<types::byte_t> rgbReserved = utils::slice(bytes, 514, 516, 2);
-           utils::isEqual(rgbReserved, { 0x00, 0x00 }, "rgbReserved");
+           const uint16_t rgbReserved = utils::slice(bytes, 514, 516, 2, utils::toT_l<uint16_t>);
+           utils::isIn(rgbReserved, { 0x00, 0x00 });
 
            /*
            * bidNextB (Unicode ONLY: 8 bytes): Next BID. 

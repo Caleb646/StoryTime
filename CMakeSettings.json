@@ -4,19 +4,40 @@
       "name": "x64-Debug",
       "generator": "Ninja",
       "configurationType": "Debug",
-      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "inheritEnvironments": [ "clang_cl_x64_x64" ],
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
+      "enableClangTidyCodeAnalysis": true,
+      "clangTidyChecks": "*,-abseil-*,-altera-*,-android-*,-fuchsia-*,-google-*,-llvm*,-modernize-use-trailing-return-type,-zircon-*,-readability-else-after-return,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers",
       "variables": [
-        {
-          "name": "CMAKE_INSTALL_PREFIX",
-          "value": "C:/Users/caleb/Coding_Projects/CPP Projects/PST File Reader/out/install/x64-Debug",
-          "type": "PATH"
-        }
+        //{
+        //"name": "CMAKE_INSTALL_PREFIX",
+        //"value": "C:/Users/caleb/Coding_Projects/CPP Projects/PST File Reader/out/install/x64-Debug",
+        //"type": "PATH"
+        //}
       ]
-    }
+    } //,
+    //{
+    //  "name": "x64-Release",
+    //  "generator": "Ninja",
+    //  "configurationType": "Release",
+    //  "inheritEnvironments": [ "clang_cl_x64_x64" ],
+    //  "buildRoot": "${projectDir}\\out\\build\\${name}",
+    //  "installRoot": "${projectDir}\\out\\install\\${name}",
+    //  "cmakeCommandArgs": "",
+    //  "buildCommandArgs": "-v",
+    //  "ctestCommandArgs": "",
+    //  "enableMicrosoftCodeAnalysis": true,
+    //  "variables": [
+    //    //{
+    //    //"name": "CMAKE_INSTALL_PREFIX",
+    //    //"value": "C:/Users/caleb/Coding_Projects/CPP Projects/PST File Reader/out/install/x64-Debug",
+    //    //"type": "PATH"
+    //    //}
+    //  ]
+    //}
   ]
 }

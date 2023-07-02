@@ -10,7 +10,7 @@
 #include "types.h"
 #include "utils.h"
 #include "core.h"
-#include "ndb.h"
+#include "NDB.h"
 
 #ifndef READER_LTP_H
 #define READER_LTP_H
@@ -635,17 +635,7 @@ namespace reader {
 				static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
 				ndb::NBTEntry nbt = ndb->get(nid);
 				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
-				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
-				return HN(nid, dataTree);
-			}
-
-			static HN Init(core::NID nid, const ndb::DataTree& dataTree)
-			{
-				static_assert(std::is_move_constructible_v<HN>, "HN must be move constructible");
-				static_assert(std::is_move_assignable_v<HN>, "HN must be move assignable");
-				static_assert(std::is_copy_constructible_v<HN>, "HN must be copy constructible");
-				static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
-				return HN(nid, dataTree);
+				return HN(nid, ndb->InitDataTree(bbt.bref, bbt.cb));
 			}
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
@@ -746,7 +736,7 @@ namespace reader {
 				hnhdr.bSig = utils::slice(bytes, 2, 3, 1, utils::toT_l<uint32_t>);
 				hnhdr.bClientSig = utils::slice(bytes, 3, 4, 1, utils::toT_l<uint32_t>);
 				hnhdr.hidUserRoot = HID(utils::slice(bytes, 4, 8, 4));
-				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<int32_t>), 4);
+				hnhdr.rgbFillLevel = utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<uint32_t>), 4);
 
 				uint32_t hidType = hnhdr.hidUserRoot.getHIDType();
 				ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType)
@@ -825,25 +815,30 @@ namespace reader {
 			}
 
 			private:
-				HN(core::NID nid, const ndb::DataTree& dTree)
-					: m_nid(nid)
+				HN(core::NID nid, ndb::DataTree&& dTree)
+					: m_nid(nid), m_dataTree(dTree)
 				{
-					m_hnhdr = readHNHDR(dTree.first().data, 0, dTree.size());
+					// The first call to blocks fetches all of them
+					const std::vector<ndb::DataBlock>& dBlocks = m_dataTree.blocks();
+					const ndb::DataBlock firstDBlock = dBlocks.at(0);
+
+					m_hnhdr = readHNHDR(firstDBlock.data, 0, dBlocks.size());
 
 					HNBlock block{};
-					block.map = readHNPageMap(dTree.first().data, m_hnhdr.ibHnpm);
-					block.data = dTree.first().data;
+					block.map = readHNPageMap(firstDBlock.data, m_hnhdr.ibHnpm);
+					block.data = firstDBlock.data;
 					m_blocks.push_back(block);
 
-					for (size_t i = 1; i < dTree.dataBlocks.size(); i++)
+					for (size_t i = 1; i < dBlocks.size(); i++)
 					{
-						addBlock(dTree.dataBlocks.at(i).data, i);
+						addBlock(dBlocks.at(i).data, i);
 					}
 				}
 
 			private:
 				core::NID m_nid;
 				HNHDR m_hnhdr;
+				ndb::DataTree m_dataTree;
 				std::vector<HNBlock> m_blocks;
 		};
 
@@ -1100,10 +1095,7 @@ namespace reader {
 				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
 				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
-				ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
-				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
-				return PropertyContext(nid, ndb, HN::Init(nid, dataTree));
+				return PropertyContext(nid, ndb, HN::Init(nid, ndb));
 			}
 
 			auto begin()
@@ -1116,10 +1108,13 @@ namespace reader {
 				return m_properties.end();
 			}
 
-			template<typename PropIDType>
-			const Property& at(PropIDType propID) const
+			template<typename ConvertTo = Property, typename PropIDType>
+			const ConvertTo& at(PropIDType propID) const
 			{
-				return m_properties.at(_convert(propID));
+				if (std::is_same_v<ConvertTo, Property>)
+					return m_properties.at(_convert(propID));
+				else
+					return m_properties.at(_convert(propID)).as<ConvertTo>();
 			}
 
 			template<typename PropIDType>
@@ -1246,8 +1241,8 @@ namespace reader {
 
 		class TableContext
 		{
-
 		public:
+
 			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
 				static_assert(std::is_move_constructible_v<TableContext>, "TableContext must be move constructible");
@@ -1255,21 +1250,23 @@ namespace reader {
 				static_assert(std::is_copy_constructible_v<TableContext>, "TableContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<TableContext>, "TableContext must be copy assignable");
 				ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::BBTEntry bbt = ndb->get(nbt.bidData);
-				ndb::DataTree dataTree = ndb->readDataTree(bbt.bref, bbt.cb);
-				HN hn = HN::Init(nid, dataTree);
-				return TableContext(nid, ndb, std::move(hn), nbt);
+				return TableContext(nid, ndb, HN::Init(nid, ndb), nbt);
+			}
+
+			std::vector<TCRowID> rowIDs() const
+			{
+				return m_rowIDs;
 			}
 
 			bool hasCol(types::PidTagType propID, types::PropertyType propType) const
 			{
-				uint32_t propID_ = static_cast<uint32_t>(propID);
-				uint32_t propType_ = static_cast<uint32_t>(propType);
+				const auto propID_ = static_cast<uint32_t>(propID);
+				const auto propType_ = static_cast<uint32_t>(propType);
 				for(const auto& col : m_header.rgTCOLDESC)
 				{
-					uint32_t colTag = col.tag;
-					uint32_t colPropId = col.propId();
-					uint32_t colPropType = col.propType();
+					const uint32_t colTag = col.tag;
+					const uint32_t colPropId = col.propId();
+					const uint32_t colPropType = col.propType();
 					if (colPropId == propID_)
 						if(colPropType == propType_)
 							return true;
@@ -1277,10 +1274,24 @@ namespace reader {
 				return false;
 			}
 
-			const RowData& at(TCRowID rowID) const
+			TColDesc findCol(types::PidTagType propID) const
 			{
-				size_t blockIdx = rowID.dwRowIndex / m_rowsPerBlock;
-				size_t rowIdx = rowID.dwRowIndex % m_rowsPerBlock;
+                const auto propID_ = static_cast<uint32_t>(propID);
+                for (const auto &col : m_header.rgTCOLDESC) {
+                        const uint32_t colTag = col.tag;
+                        const uint32_t colPropId = col.propId();
+                        const uint32_t colPropType = col.propType();
+                        if (colPropId == propID_)
+								return col;
+                }
+                ASSERT(false, "Unable to find column");
+                return TColDesc{};
+			}
+
+			[[nodiscard]] const RowData& at(TCRowID rowID) const
+			{
+				const size_t blockIdx = rowID.dwRowIndex / m_rowsPerBlock;
+				const size_t rowIdx = rowID.dwRowIndex % m_rowsPerBlock;
 				return m_rowBlocks.at(blockIdx).at(rowIdx);
 			}
 
@@ -1402,7 +1413,7 @@ namespace reader {
 		private:
 			TableContext(
 				core::NID nid, core::Ref<const ndb::NDB> ndb, HN&& hn, const ndb::NBTEntry& nbt)
-				: m_nid(nid), m_ndb(ndb), m_hn((std::move(hn)))
+				: m_nid(nid), m_ndb(ndb), m_hn(hn)
 			{
 				ASSERT((m_hn.getBType() == types::BType::TC), "[ERROR]");
 
@@ -1448,7 +1459,7 @@ namespace reader {
 		private:
 			core::NID m_nid;
 			core::Ref<const ndb::NDB> m_ndb;
-			uint64_t m_rowsPerBlock;
+			uint64_t m_rowsPerBlock{0};
 			std::vector<RowBlock> m_rowBlocks;
 			std::vector<TCRowID> m_rowIDs;
 			TCInfo m_header;

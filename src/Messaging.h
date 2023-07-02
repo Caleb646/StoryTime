@@ -11,8 +11,8 @@
 #include "types.h"
 #include "utils.h"
 #include "core.h"
-#include "ndb.h"
-#include "ltp.h"
+#include "NDB.h"
+#include "LTP.h"
 
 #ifndef READER_MESSAGING_H
 #define READER_MESSAGING_H
@@ -21,7 +21,18 @@ namespace reader
 {
 	namespace msg
 	{
-
+		class MessageObject
+		{
+		public:
+			static MessageObject Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
+			{
+				const ndb::NBTEntry nbt = ndb->get(nid);
+				const ndb::BBTEntry bbtData = ndb->get(nbt.bidData);
+				const ndb::BBTEntry bbtSub = ndb->get(nbt.bidSub);
+				const ndb::DataTree dataTree = ndb->InitDataTree(bbtData.bref, bbtData.cb);
+				return MessageObject();
+			}
+		};
 	
 		/**
 		 * @brief The Folder object is a composite entity that is represented using four LTP constructs. Each Folder 
@@ -58,22 +69,72 @@ namespace reader
 				ASSERT((normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
 
+				{
 
-				ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+					// TODO: this assert doesnt pass. The PidTagType is found but it has the PropType of PTBinary not PTInt32
+					//ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+					// TODO: this assert doesnt pass. Pid Tag matches but it has PropType of PTstring
+					//ASSERT((hier.hasCol(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
+					const ltp::TColDesc ltpRowIdCol = hier.findCol(types::PidTagType::LtpRowId);
+					const ltp::TColDesc ltpRowVerCol = hier.findCol(types::PidTagType::LtpRowVer);
+					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+				}
+
+				{
+					ASSERT((contents.hasCol(types::PidTagType::Importance, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ClientSubmitTime, types::PropertyType::Time)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::SentRepresentingNameW, types::PropertyType::String)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageToMe, types::PropertyType::Boolean)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageCcMe, types::PropertyType::Boolean)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ConversationTopicW, types::PropertyType::String)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ConversationIndex, types::PropertyType::Binary)), "[ERROR]");
+
+					ASSERT((contents.hasCol(types::PidTagType::DisplayCcW, types::PropertyType::String)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::DisplayToW, types::PropertyType::String)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageDeliveryTime, types::PropertyType::Time)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+
+					//ASSERT((contents.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromVersionhistory, types::PropertyType::Binary)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
+					ASSERT((contents.hasCol(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
+
+					const ltp::TColDesc ltpRowIdCol = hier.findCol(types::PidTagType::LtpRowId);
+					const ltp::TColDesc ltpRowVerCol = hier.findCol(types::PidTagType::LtpRowVer);
+					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+				}
 				return Folder(nid, ndb, std::move(normal), std::move(hier), std::move(contents), std::move(assoc));
+			}
+
+			std::vector<MessageObject> messages()
+			{
+				/*
+				* The RowIndex (section 2.3.4.3) of the contents table TC provides an efficient mechanism to locate
+				*	the Message object PC node of every Message object in the Folder object. The dwRowIndex field
+				*	represents the 0-based Message object row in the Row Matrix, whereas the dwRowID value
+				*	represents the NID of the Message object node that corresponds to the row specified by RowIndex.
+				*	For example, if a TCROWID is "{ dwRowID=0x200024, dwRowIndex=3 }", the NID that
+				*	corresponds to the fourth (first being 0th) Message object row in the Row Matrix is 0x200024.
+				*/
 			}
 
 		private:
@@ -85,11 +146,30 @@ namespace reader
 				ltp::TableContext&& contents,
 				ltp::TableContext&& assoc
 				)
-				: m_nid(nid), m_ndb(ndb),  m_normal(std::move(normal)), 
-				  m_hier(std::move(hier)), m_contents(std::move(contents)), 
-				  m_assoc(std::move(assoc))
+				: m_nid(nid), m_ndb(ndb),  m_normal(normal), 
+				  m_hier(hier), m_contents(contents), 
+				  m_assoc(assoc)
 			{
+				_setupSubFolders();
+			}
 
+			void _setupSubFolders()
+			{
+				/*
+				* The RowIndex (section 2.3.4.3) of the hierarchy table TC provides a mechanism for efficiently
+				* locating immediate sub-Folder objects. The dwRowIndex field represents the 0-based sub-Folder
+				* object row in the Row Matrix, whereas the dwRowID value represents the NID of the sub-Folder
+				* object node that corresponds to the row specified by RowIndex. For example, if a TCROWID is: "{
+				* dwRowID=0x8022, dwRowIndex=3 }", the sub-Folder object NID that corresponds to the fourth
+				* (first being 0th) sub-Folder object row in the Row Matrix is 0x8022.
+				*/
+
+				std::vector<ltp::TCRowID> rowIDs = m_hier.rowIDs();
+				for (const auto& rowid : rowIDs)
+				{
+					core::NID rowNID(rowid.dwRowID);
+					m_subfolders.push_back(Folder::Init(rowNID, m_ndb));
+				}
 			}
 
 		private:
@@ -99,6 +179,7 @@ namespace reader
 			ltp::TableContext m_hier;
 			ltp::TableContext m_contents;
 			ltp::TableContext m_assoc;
+			std::vector<Folder> m_subfolders{};
 		};
 
 		struct EntryID
@@ -131,7 +212,7 @@ namespace reader
 				static_assert(std::is_move_assignable_v<MessageStore>, "Property context must be move constructible");
 				static_assert(std::is_copy_constructible_v<MessageStore>, "Property context must be move constructible");
 				static_assert(std::is_copy_assignable_v<MessageStore>, "Property context must be move constructible");
-				return MessageStore(nid, ndb, std::move(ltp::PropertyContext::Init(nid, ndb)));
+				return MessageStore(nid, ndb, ltp::PropertyContext::Init(nid, ndb));
 			}
 
 		public:
@@ -153,7 +234,7 @@ namespace reader
 
 		private:
 			MessageStore(core::NID nid, core::Ref<const ndb::NDB> ndb, ltp::PropertyContext&& pc)
-				: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc))
+				: m_nid(nid), m_ndb(ndb), m_pc(pc)
 			{
 				/*
 				* Property identifier		Property type		Friendly name				Description

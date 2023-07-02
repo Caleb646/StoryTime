@@ -13,7 +13,7 @@ namespace reader {
 		typedef unsigned char byte_t;
         typedef uint16_t utf16le_t;
 
-        enum class PType : uint64_t
+        enum class PType : uint32_t
         {
             BBT = 0x80, // Block BTree page.  
             NBT = 0x81, // Node BTree page.   
@@ -22,10 +22,10 @@ namespace reader {
             AMap = 0x84, // Allocation Map page
             FPMap = 0x85, // Free Page Map page.
             DL = 0x86, // Density List page. 
-            INVALID = 0xFFFFFFFF // Invalid page type.
+            INVALID = 0xFFFFFF // Invalid page type.
         };
 
-        enum class NIDType : uint64_t
+        enum class NIDType : uint32_t
         {
             HID = 0x00,                     // NID_TYPE_HID                        Heap node
             INTERNAL = 0x01,                // NID_TYPE_INTERNAL                   Internal node (section 2.4.1)
@@ -47,10 +47,10 @@ namespace reader {
             RECIPIENT_TABLE = 0x12,         // NID_TYPE_RECIPIENT_TABLE            Recipient table (TC)
             SEARCH_TABLE_INDEX = 0x13,      // NID_TYPE_SEARCH_TABLE_INDEX         Internal, persisted view-related
             LTP = 0x1F,                     // NID_TYPE_LTP                        LTP
-            INVALID = 0xFFFFFFFF            // NID_TYPE_NONE                       Invalid NID
+            INVALID = 0xFFFFFF            // NID_TYPE_NONE                       Invalid NID
         };
 
-        enum class BType : uint64_t
+        enum class BType : uint32_t
         {
             Reserved1   = 0x6C,   // Reserved 
             TC          = 0x7C,   // Table Context(TC / HN) 
@@ -64,7 +64,15 @@ namespace reader {
             Invalid
         };
 
-        enum class FillLevel : uint64_t
+        enum class BlockType : uint32_t
+        {
+            DATA        = 0xFF,
+            X           = 0x01,
+            XX          = 0x02,
+            INVALID     = 0xFFFFF
+        };
+
+        enum class FillLevel : uint32_t
         {
             LEVEL_EMPTY = 0x0, //  At least 3584 bytes free / data block does not exist
             LEVEL_1     = 0x1, // 2560 - 3584 bytes free
@@ -92,7 +100,7 @@ namespace reader {
             NBTENTRY
         };
 
-        enum class PropertyType : uint64_t
+        enum class PropertyType : uint32_t
         {
             Integer16               =   0x0002, /// 2 bytes; a 16 - bit integer
             Integer32               =   0x0003, /// 4 bytes; a 32 - bit integer
@@ -128,7 +136,7 @@ namespace reader {
             Object                  =   0x000D, /// The property value is a Component Object Model(COM) object, as specified in section 2.11.1.5.
         };
 
-        enum class PidTagType : uint64_t
+        enum class PidTagType : uint32_t
         {
             RecordKey                 =   0x0FF9,       // Record key. This is the Provider UID of this PST.
             DisplayName               =   0x3001,
@@ -154,18 +162,33 @@ namespace reader {
             LtpRowVer                 =   0x67F3,       /// PtypInteger32
             PstPassword               =   0x67FF,       /// PtypInteger32
             MapiFormComposeCommand    =   0x682F,       /// PtypString
-
             ContainerClass            =   0x3613,       /// PtypBinary
-
             ReplItemid                =   0x0E30, /// PtypInteger32  Replication Item ID.N
             ReplChangenum             =   0x0E33, /// PtypInteger64  Replication Change Number.N
             ReplVersionHistory        =   0x0E34, /// PtypBinary  Replication Version History.N
             ReplFlags                 =   0x0E38, /// PtypInteger32  Replication flags.Y
 
+            Importance                      =   0x0017,
+            MessageClassW                   =   0x001A,  // PtypString PidTag
+            Sensitivity                     =   0x0036,  // PtypInteger3 PidTag
+            SubjectW                        =   0x0037,
+            ClientSubmitTime                =   0x0039, //PtypTime PidTag Submit timestamp Y
+            SentRepresentingNameW           =   0x0042, //PtypString PidTag Sender representative name.
+            MessageToMe                     =   0x0057, //PtypBoolean PidTag Whether recipient is in To : line Y
+            MessageCcMe                     =   0x0058, //PtypBoolean PidTag Whether recipient is in Cc : line Y
+            ConversationTopicW              =   0x0070, //PtypString PidTag Conversation topic.This property has
+            ConversationIndex               =   0x0071, //PtypBinary PidTag Conversation index Y
+            DisplayCcW                      =   0x0E03, //PtypString PidTag Cc : line.This property has an
+            DisplayToW                      =   0x0E04, //PtypString PidTag To : line.This property has an
+            MessageDeliveryTime             =   0x0E06, //PtypTime PidTag Message delivery timestamp Y
+            MessageFlags                    =   0x0E07, //PtypInteger32
+            MessageSize                     =   0x0E08, //PtypInteger32
+            MessageStatus                   =   0x0E17, //PtypInteger32
+            ReplCopiedfromVersionhistory    = 0x0E3C, // PtypBinary PidTag
+            ReplCopiedfromItemid            =   0x0E3D, //PtypBinary PidTag Replication item ID information Y
 
 
-
-            Unknown				      =   0xFFFFFFFFFFFFFF      
+            Unknown				            =   0xFFFFFFF      
         };
 	}
 }
