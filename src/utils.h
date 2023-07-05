@@ -677,6 +677,82 @@ namespace reader {
             return convert(readBytes(file, numBytes));
         }
 
+
+        class ByteView
+        {
+        public:
+            ByteView(const std::vector<types::byte_t>& bytes)
+                : m_bytes(bytes) {}
+            ByteView(const ByteView&) = delete;
+            ByteView(ByteView&&) = delete;
+            ByteView& operator=(const ByteView&) = delete;
+            ByteView& operator=(const ByteView&&) = delete;
+
+            std::vector<types::byte_t> read(size_t size)
+            {
+                const size_t start = m_start;
+                m_start += size;
+                return slice(m_bytes, start, start + size, size);
+            }
+
+            template<typename PrimitiveType>
+            PrimitiveType read(size_t size)
+            {
+                const size_t start = m_start;
+                m_start += size;
+                return slice(m_bytes, start, start + size, size, toT_l<PrimitiveType>);
+            }
+
+            template<typename EntryType>
+            EntryType entry(size_t size)
+            {
+                const size_t start = m_start;
+                m_start += size;
+                return EntryType(slice(m_bytes, start, start + size, size));
+            }
+
+            template<typename EntryType>
+            std::vector<EntryType> entries(size_t nEntries, size_t singleEntrySize)
+            {
+                std::vector<EntryType> res{};
+                res.reserve(nEntries);
+
+                for (size_t i = 0; i < nEntries; i++)
+                {
+                    // Do NOT need to increment m_start here because the
+                    // entry method is doing it for us.
+                    res.push_back(entry<EntryType>(singleEntrySize));
+                }
+                return res;
+            }
+
+            template<typename RetType = std::vector<types::byte_t>>
+            RetType takeLast(size_t nBytes)
+            {
+                ASSERT((nBytes <= (m_bytes.size() - m_start)), "[ERROR]");
+                const size_t offset = m_bytes.size() - m_start - nBytes;
+                skip(offset);
+                if constexpr (std::is_same_v<RetType, std::vector<types::byte_t>>)
+                {
+                    return read(nBytes);
+                }
+                else
+                {
+                    return entry<RetType>(nBytes);
+                }
+            }
+
+            ByteView& skip(size_t nBytes)
+            {
+                m_start += nBytes;
+                return *this;
+            }
+
+        private:
+            const std::vector<types::byte_t>& m_bytes;
+            size_t m_start{ 0 };
+        };
+
         /*
         *
         * 

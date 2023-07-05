@@ -640,7 +640,7 @@ namespace reader {
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
 			{
-				ASSERT((m_blocks.size() + 1 == blockIdx), "[ERROR] Invalid blockIdx");
+				ASSERT((m_blocks.size() == blockIdx), "[ERROR] Invalid blockIdx");
 				if(blockIdx == 8 || blockIdx % 8 + 128 == 0)
 				{
 					HNBitMapHDR bmheader = readHNBitMapHDR(data);
@@ -776,22 +776,26 @@ namespace reader {
 				}
 				ASSERT((pg.rgibAlloc.size() == pg.cAlloc + 1), "[ERROR] Should be cAlloc + 1 entries");
 
-				size_t size = 0;
 				for (size_t i = 1; i < pg.rgibAlloc.size(); i++)
 				{
 					ASSERT((pg.rgibAlloc[i] > pg.rgibAlloc[i - 1]), "[ERROR]");
-					size += pg.rgibAlloc[i] - pg.rgibAlloc[i - 1];
 				}
+				ASSERT((pg.rgibAlloc.at(pg.rgibAlloc.size() - 1) == start), "[ERROR]");
 				// 12 is the size of the HNHDR Header
 				// 4 is the combined size of cAlloc and cFree
-				// TODO: an HNHDR header wont always be present so subtract by 12 won't always work.
-				ASSERT((size == bytes.size() - 12 - 4 - allocBytes.size()), "[ERROR] Invalid size");
+				//const uint64_t size = pg.rgibAlloc.back() - pg.rgibAlloc.front();
+				//const uint64_t sizeWithHeader = bytes.size() - 12 - 4 - allocBytes.size();
+				//const uint64_t sizeWithoutHeader = bytes.size() - 4 - allocBytes.size();
+				// There can be anywhere from 0 to 63 bytes of padding between the HNPAGEMAP and the block trailer.
+				// The bytes vector doesn't include the bytes for the block trailer but it does include the variable padding
+				//ASSERT((size == sizeWithHeader || size == sizeWithoutHeader), "[ERROR] Invalid size");
 				return pg;
 			}
 
 			static HNPageHDR readHNPageHDR(const std::vector<types::byte_t>& bytes)
 			{
-				ASSERT((bytes.size() == 2), "[ERROR] Invalid size");
+				// HNPageHDR should be the first 2 bytes in bytes vector
+				//ASSERT((bytes.size() == 2), "[ERROR] Invalid size");
 				HNPageHDR hdr{};
 				hdr.ibHnpm = utils::slice(bytes, 0, 2, 2, utils::toT_l<int32_t>);
 				return hdr;
@@ -1419,6 +1423,7 @@ namespace reader {
 
 				m_header = readTCInfo(m_hn.alloc(m_hn.getHeader().hidUserRoot));
 				BTreeHeap bth(m_hn, m_header.hidRowIndex);
+				ndb::SubNodeBTree subNodeBTree = m_ndb->InitSubNodeBTree(nbt);
 				ASSERT((bth.keySize() == 4), "[ERROR]");
 				ASSERT((bth.dataSize() == 4), "[ERROR]");
 
@@ -1436,8 +1441,13 @@ namespace reader {
 
 					else // Row Matrix must be in a subnode id'ed by a NID
 					{
+						const auto [rowBlockBytes, found] = subNodeBTree.at(m_header.hnidRows.as<core::NID>());
+						ASSERT(found, "[ERROR] Failed to find");
+						m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
+						ASSERT((m_rowsPerBlock == bth.nrecords()), "[ERROR] Invalid number of rows per block");
+						m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
 						/// Each block except the last one MUST have a size of 8192 bytes.
-						ASSERT(false, "[ERROR] Not implemented yet");
+						///ASSERT(false, "[ERROR] Not implemented yet");
 					}
 
 					for (const auto& record : bth.records())

@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 #include <map>
+#include <functional>
+#include <unordered_map>
 
 #include "types.h"
 #include "utils.h"
@@ -67,6 +69,39 @@ namespace reader {
             int64_t dwCRC{};
             /// (Unicode: 8 bytes; ANSI 4 bytes): The BID (section 2.2.2.2) of the data block.
             core::BID bid{};
+
+            BlockTrailer() = default;
+
+            BlockTrailer(const std::vector<types::byte_t>& bytes, core::BREF bref)
+                : BlockTrailer(bytes)
+            {
+                auto computedSig = utils::ms::ComputeSig(bref.ib, bref.bid.getBidRaw());
+                ASSERT(std::cmp_equal(wSig, computedSig),
+                    "[ERROR] Page Sig [%i] != Computed Sig [%i]", wSig, computedSig);
+            }
+
+            BlockTrailer(const std::vector<types::byte_t>& bytes)
+            {
+                ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
+
+                /*
+                * cb (2 bytes):
+                *   The amount of data, in bytes, contained within the data section of the block.
+                *   This value does not include the block trailer or any unused bytes that can exist after the
+                *   end of the data and before the start of the block trailer.
+                *
+                * wSig (2 bytes): Block signature. See section 5.5 for the algorithm to calculate the block signature.
+                *
+                * dwCRC (4 bytes): 32-bit CRC of the cb bytes of raw data, see section 5.3 for the algorithm to calculate
+                *   the CRC
+                *
+                * Bid (8 bytes): The BID (section 2.2.2.2) of the data block.
+                */
+                cb = utils::slice(bytes, 0, 2, 2, utils::toT_l<int64_t>);
+                wSig = utils::slice(bytes, 2, 4, 2, utils::toT_l<int64_t>);
+                dwCRC = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
+                bid = core::readBID(utils::slice(bytes, 8, 16, 8));
+            }
         };
 
         class BTEntry
@@ -504,9 +539,8 @@ namespace reader {
                 }
         };
 
-        class DataBlock
+        struct DataBlock
         {
-        public:
             /// data (Variable): Raw data.
             std::vector<types::byte_t> data{};
             /// padding (Variable, Optional): Reserved.
@@ -576,11 +610,153 @@ namespace reader {
             BlockTrailer trailer{};
         };
 
+        static BlockTrailer _readBlockTrailer(
+            const std::vector<types::byte_t>& bytes, const core::BREF* const bref = nullptr)
+        {
+            ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
+
+            /*
+            * cb (2 bytes):
+            *   The amount of data, in bytes, contained within the data section of the block.
+            *   This value does not include the block trailer or any unused bytes that can exist after the
+            *   end of the data and before the start of the block trailer.
+            *
+            * wSig (2 bytes): Block signature. See section 5.5 for the algorithm to calculate the block signature.
+            *
+            * dwCRC (4 bytes): 32-bit CRC of the cb bytes of raw data, see section 5.3 for the algorithm to calculate
+            *   the CRC
+            *
+            * Bid (8 bytes): The BID (section 2.2.2.2) of the data block.
+            */
+
+            BlockTrailer trailer{};
+            trailer.cb = utils::slice(bytes, 0, 2, 2, utils::toT_l<int64_t>);
+            trailer.wSig = utils::slice(bytes, 2, 4, 2, utils::toT_l<int64_t>);
+            trailer.dwCRC = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
+            trailer.bid = core::readBID(utils::slice(bytes, 8, 16, 8));
+
+            if (bref != nullptr)
+            {
+                auto computedSig = utils::ms::ComputeSig(bref->ib, bref->bid.getBidRaw());
+                ASSERT(std::cmp_equal(trailer.wSig, computedSig),
+                    "[ERROR] Page Sig [%i] != Computed Sig [%i]", trailer.wSig, computedSig);
+            }
+            return trailer;
+        }
+
+        static BlockTrailer sliceReadBlockTrailer(
+            const std::vector<types::byte_t>& bytes,
+            uint64_t blockTotalSize,
+            const core::BREF* const bref = nullptr
+        )
+        {
+            ASSERT((bytes.size() == blockTotalSize), "[ERROR]");
+            const uint64_t blockTrailerSize = 16;
+            const uint64_t blockTrailerStart = bytes.size() - blockTrailerSize;
+            const uint64_t blockTrailerEnd = bytes.size();
+            return _readBlockTrailer(utils::slice(bytes, blockTrailerStart, blockTrailerEnd, blockTrailerSize), bref);
+        }
+
+        static DataBlock _readDataBlock(
+            const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize)
+        {
+            ASSERT(std::cmp_equal(blockBytes.size(), blockSize), "[ERROR] blockBytes.size() != blockSize");
+            std::vector<types::byte_t> data = utils::slice(blockBytes, 0LL, trailer.cb, trailer.cb);
+            ASSERT(std::cmp_equal(data.size(), trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
+
+            size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
+            ASSERT(std::cmp_equal(trailer.dwCRC, dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
+
+            // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
+            utils::ms::CryptPermute(
+                data.data(),
+                static_cast<int>(data.size()),
+                utils::ms::DECODE_DATA
+            );
+
+            //utils::ms::CryptCyclic(
+            //    data.data(), 
+            //    static_cast<int>(data.size()), 
+            //    static_cast<utils::ms::DWORD>(trailer.bid.getBidRaw())
+            //);
+
+            DataBlock block{};
+            block.data = std::move(data);
+            block.trailer = trailer;
+            return block;
+        }
+
+        static DataBlock readDataBlock(const std::vector<types::byte_t>& blockBytes, core::BREF bref)
+        {
+            utils::ByteView view(blockBytes);
+            BlockTrailer trailer(view.takeLast(16), bref);
+            return _readDataBlock(blockBytes, trailer, blockBytes.size());
+        }
+
+        static XBlock _readXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer)
+        {
+            XBlock block{};
+            block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
+            block.cLevel = utils::slice(blockBytes, 1, 2, 1, utils::toT_l<int32_t>);
+            block.cEnt = utils::slice(blockBytes, 2, 4, 2, utils::toT_l<int32_t>);
+            block.lcbTotal = utils::slice(blockBytes, 4, 8, 4, utils::toT_l<int64_t>);
+            block.trailer = trailer;
+
+            ASSERT((block.btype == 0x01), "[ERROR] btype for XBlock should be 0x01 not %i", block.btype);
+            ASSERT((block.cLevel == 0x01), "[ERROR] cLevel for XBlock should be 0x01 not %i", block.cLevel);
+
+            uint64_t bidSize = 8;
+            // from the end of lcbTotal to the end of the data field
+            std::vector<types::byte_t> bidBytes = utils::slice(
+                blockBytes,
+                bidSize,
+                static_cast<uint64_t>(trailer.cb + bidSize),
+                static_cast<uint64_t>(trailer.cb)
+            );
+            for (uint64_t i = 0; i < block.cEnt; i++)
+            {
+                uint64_t start = i * bidSize;
+                uint64_t end = (i + 1) * bidSize;
+                ASSERT((end > start), "[ERROR]");
+                ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
+                block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
+            }
+            return block;
+        }
+
+        static XXBlock _readXXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer)
+        {
+            XXBlock block{};
+            block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
+            block.cLevel = utils::slice(blockBytes, 1, 2, 1, utils::toT_l<int32_t>);
+            block.cEnt = utils::slice(blockBytes, 2, 4, 2, utils::toT_l<int32_t>);
+            block.lcbTotal = utils::slice(blockBytes, 4, 8, 4, utils::toT_l<int64_t>);
+            block.trailer = trailer;
+
+            ASSERT((block.btype == 0x01), "[ERROR] btype for XXBlock should be 0x01 not %i", block.btype);
+            ASSERT((block.cLevel == 0x02), "[ERROR] cLevel for XXBlock should be 0x02 not %i", block.cLevel);
+
+            const int32_t bidSize = 8;
+            // from the end of lcbTotal to the end of the data field
+            std::vector<types::byte_t> bidBytes = utils::slice(blockBytes, (int64_t)8, trailer.cb + (int64_t)8, trailer.cb);
+            for (int32_t i = 0; i < block.cEnt; i++)
+            {
+                int32_t start = i * bidSize;
+                int32_t end = ((int64_t)i + 1) * bidSize;
+                ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
+                block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
+            }
+            return block;
+        }
+
         class DataTree
         {
         public:
-            DataTree(core::Ref<std::ifstream> file, core::BREF bref, uint64_t sizeOfBlockData)
-                : m_file(file), m_bref(bref), m_sizeofFirstBlockData(sizeOfBlockData)
+            using GetBBT_t = std::function<BBTEntry(const core::BID& bid)>;
+
+        public:
+            DataTree(core::Ref<std::ifstream> file, GetBBT_t&& getBBT, core::BREF bref, uint64_t sizeOfBlockData)
+                : m_file(file), m_bref(bref), m_getBBT(getBBT), m_sizeofFirstBlockData(sizeOfBlockData)
             {
                 static_assert(std::is_move_constructible_v<DataTree>, "DataTree must be move constructible");
                 static_assert(std::is_move_assignable_v<DataTree>, "DataTree must be move assignable");
@@ -588,22 +764,22 @@ namespace reader {
                 static_assert(std::is_copy_assignable_v<DataTree>, "DataTree must be copy assignable");
             }
 
-            const DataBlock& first() const
+            [[nodiscard]] const DataBlock& first() const
             {
                 return m_dataBlocks.front();
             }
 
-            size_t size() const
+            [[nodiscard]] size_t size() const
             {
                 return m_dataBlocks.size();
             }
 
-            size_t size(size_t dataBlockIdx) const
+            [[nodiscard]] size_t size(size_t dataBlockIdx) const
             {
                 return m_dataBlocks.at(dataBlockIdx).data.size();
             }
 
-            bool isValid() const
+            [[nodiscard]] bool isValid() const
 			{
                 return !m_dataBlocks.empty(); //|| !m_xBlocks.empty() || !m_xxBlocks.empty();
 			}
@@ -611,12 +787,41 @@ namespace reader {
             const std::vector<DataBlock>& blocks()
             {
                 if (m_dataBlocks.size() > 0) // Data Blocks have already been read and cached in m_dataBlocks
+                {
                     return m_dataBlocks;
+                }
+                    
                 _init();
                 return m_dataBlocks;
             }
 
+            /**
+             * @return pair<totatBlockSize, offset or padding>
+            */
+            static std::pair<uint64_t, uint64_t> getBlockTotalSize(uint64_t sizeofBlockData)
+            {
+                const uint64_t blockTrailerSize = 16;
+                const uint64_t multiple = 64;
+                const uint64_t remainder = (sizeofBlockData + blockTrailerSize) % multiple;
+                const uint64_t offset = (multiple * (remainder != 0)) - remainder;
+                // The block size is the smallest multiple of 64 that can hold both the data and the block trailer.
+                const uint64_t blockSize = (sizeofBlockData + blockTrailerSize) + offset;
+
+                ASSERT((blockSize % 64 == 0),
+                    "[ERROR] Block Size must be a mutiple of 64");
+                ASSERT((blockSize <= 8192),
+                    "[ERROR] Block Size must less than or equal to the max blocksize of 8192");
+                return { blockSize, offset };
+            }
+
         private:
+
+            std::vector<types::byte_t> readBlockBytes(core::BREF bref, uint64_t blockTotalSize)
+            {
+                m_file->seekg(bref.ib, std::ios::beg);
+                return utils::readBytes(m_file.get(), blockTotalSize);
+            }
+
             void _init()
             {
                 /*
@@ -647,30 +852,11 @@ namespace reader {
                 *                           SIBLOCK                                1               SIENTRY
                 */
 
-                const int64_t blockTrailerSize = 16;
-                const int64_t multiple = 64;
-                const int64_t remainder = (m_sizeofFirstBlockData + blockTrailerSize) % multiple;
-                const int64_t offset = (multiple * (remainder != 0)) - remainder;
-                // The block size is the smallest multiple of 64 that can hold both the data and the block trailer.
-                const int64_t blockSize = (m_sizeofFirstBlockData + blockTrailerSize) + offset;
+                const auto [blockSize, offset] = getBlockTotalSize(m_sizeofFirstBlockData);
+                const uint64_t blockTrailerSize = 16;
 
-                ASSERT((blockSize % 64 == 0),
-                    "[ERROR] Block Size must be a mutiple of 64");
-                ASSERT((blockSize <= 8192),
-                    "[ERROR] Block Size must less than or equal to the max blocksize of 8192");
-
-                m_file->seekg(m_bref.ib, std::ios::beg);
-                std::vector<types::byte_t> blockBytes = utils::readBytes(m_file.get(), blockSize);
-
-                BlockTrailer trailer = _readBlockTrailer(
-                    utils::slice(
-                        blockBytes,
-                        blockBytes.size() - blockTrailerSize,
-                        blockBytes.size(),
-                        (size_t)blockTrailerSize
-                    ),
-                    &m_bref
-                );
+                std::vector<types::byte_t> blockBytes = readBlockBytes(m_bref, blockSize);
+                BlockTrailer trailer = sliceReadBlockTrailer(blockBytes, blockSize, &m_bref);
 
                 ASSERT((trailer.bid == m_bref.bid), "[ERROR] Bids should match");
 
@@ -685,148 +871,295 @@ namespace reader {
                     m_dataBlocks.push_back(_readDataBlock(blockBytes, trailer, blockSize));
                     return; // If the first block is a data block then we are done.
                 }
-                // TODO: Create methods to get data blocks from x and xx blocks
                 else // XBlock or XXBlock
                 {
-                    const int32_t btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
+                    const auto btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<uint32_t>);
                     if (btype == 0x01) // XBlock
                     {
-                        //m_xBlocks.push_back(_readXBlock(blockBytes, trailer));
+                        XBlock xblock = _readXBlock(blockBytes, trailer);
+                        xBlocktoDataBlocks(xblock);
+                        return;
                     }
 
                     else if (btype == 0x02) // XXBlock
                     {
-                        //m_xxBlocks.push_back(_readXXBlock(blockBytes, trailer));
+                        XXBlock xxblock = _readXXBlock(blockBytes, trailer);
+                        xxBlocktoDataBlocks(xxblock);
+                        return;
                     }
                     else
                     {
-                        ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not %i", btype);
+                        ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
                     }
                 }
                 ASSERT(false, "[ERROR] Unknown block type");
             }
 
-            BlockTrailer _readBlockTrailer(
-                const std::vector<types::byte_t>& bytes, const core::BREF* const bref = nullptr) const
+            void xBlocktoDataBlocks(const XBlock& xblock)
             {
-                ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
-
-                /*
-                * cb (2 bytes):
-                *   The amount of data, in bytes, contained within the data section of the block.
-                *   This value does not include the block trailer or any unused bytes that can exist after the
-                *   end of the data and before the start of the block trailer.
-                *
-                * wSig (2 bytes): Block signature. See section 5.5 for the algorithm to calculate the block signature.
-                *
-                * dwCRC (4 bytes): 32-bit CRC of the cb bytes of raw data, see section 5.3 for the algorithm to calculate
-                *   the CRC
-                *
-                * Bid (8 bytes): The BID (section 2.2.2.2) of the data block.
-                */
-
-                BlockTrailer trailer{};
-                trailer.cb = utils::slice(bytes, 0, 2, 2, utils::toT_l<int64_t>);
-                trailer.wSig = utils::slice(bytes, 2, 4, 2, utils::toT_l<int64_t>);
-                trailer.dwCRC = utils::slice(bytes, 4, 8, 4, utils::toT_l<int64_t>);
-                trailer.bid = core::readBID(utils::slice(bytes, 8, 16, 8));
-
-                if (bref != nullptr)
+                for (const core::BID& bid : xblock.rgbid)
                 {
-                    auto computedSig = utils::ms::ComputeSig(bref->ib, bref->bid.getBidRaw());
-                    ASSERT(std::cmp_equal(trailer.wSig, computedSig),
-                        "[ERROR] Page Sig [%i] != Computed Sig [%i]", trailer.wSig, computedSig);
+                    BBTEntry bbt = m_getBBT(bid);
+                    const auto [blockSize, offset] = getBlockTotalSize(bbt.cb);
+                    std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref, blockSize);
+                    BlockTrailer trailer = sliceReadBlockTrailer(bytes, blockSize, &bbt.bref);
+                    m_dataBlocks.push_back(_readDataBlock(bytes, trailer, blockSize));
                 }
-                return trailer;
             }
 
-            DataBlock _readDataBlock(
-                const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer, int64_t blockSize) const
+            void xxBlocktoDataBlocks(const XXBlock& xxblock)
             {
-                ASSERT(std::cmp_equal(blockBytes.size(), blockSize), "[ERROR] blockBytes.size() != blockSize");
-                std::vector<types::byte_t> data = utils::slice(blockBytes, 0ll, trailer.cb, trailer.cb);
-                ASSERT(std::cmp_equal(data.size(), trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
-
-                size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
-                ASSERT(std::cmp_equal(trailer.dwCRC, dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
-
-                // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
-                utils::ms::CryptPermute(
-                    data.data(),
-                    static_cast<int>(data.size()),
-                    utils::ms::DECODE_DATA
-                );
-
-                //utils::ms::CryptCyclic(
-                //    data.data(), 
-                //    static_cast<int>(data.size()), 
-                //    static_cast<utils::ms::DWORD>(trailer.bid.getBidRaw())
-                //);
-
-                DataBlock block{};
-                block.data = std::move(data);
-                block.trailer = trailer;
-                return block;
-            }
-
-            XBlock _readXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer) const
-            {
-                XBlock block{};
-                block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
-                block.cLevel = utils::slice(blockBytes, 1, 2, 1, utils::toT_l<int32_t>);
-                block.cEnt = utils::slice(blockBytes, 2, 4, 2, utils::toT_l<int32_t>);
-                block.lcbTotal = utils::slice(blockBytes, 4, 8, 4, utils::toT_l<int64_t>);
-                block.trailer = trailer;
-
-                ASSERT((block.btype == 0x01), "[ERROR] btype for XBlock should be 0x01 not %i", block.btype);
-                ASSERT((block.cLevel == 0x01), "[ERROR] cLevel for XBlock should be 0x01 not %i", block.cLevel);
-
-                int32_t bidSize = 8;
-                // from the end of lcbTotal to the end of the data field
-                std::vector<types::byte_t> bidBytes = utils::slice(blockBytes, (int64_t)8, trailer.cb + (int64_t)8, trailer.cb);
-                for (int32_t i = 0; i < block.cEnt; i++)
+                std::vector<XBlock> xblocks{};
+                for (const core::BID& bid : xxblock.rgbid)
                 {
-                    int32_t start = i * bidSize;
-                    int32_t end = ((int64_t)i + 1) * bidSize;
-                    ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
-                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
+                    BBTEntry bbt = m_getBBT(bid);
+                    const auto [blockSize, offset] = getBlockTotalSize(bbt.cb);
+                    std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref, blockSize);
+                    BlockTrailer trailer = sliceReadBlockTrailer(bytes, blockSize, &bbt.bref);
+                    xblocks.push_back(_readXBlock(bytes, trailer));
                 }
-                return block;
-            }
-
-            XXBlock _readXXBlock(const std::vector<types::byte_t>& blockBytes, BlockTrailer trailer) const
-            {
-                XXBlock block{};
-                block.btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<int32_t>);
-                block.cLevel = utils::slice(blockBytes, 1, 2, 1, utils::toT_l<int32_t>);
-                block.cEnt = utils::slice(blockBytes, 2, 4, 2, utils::toT_l<int32_t>);
-                block.lcbTotal = utils::slice(blockBytes, 4, 8, 4, utils::toT_l<int64_t>);
-                block.trailer = trailer;
-
-                ASSERT((block.btype == 0x01), "[ERROR] btype for XXBlock should be 0x01 not %i", block.btype);
-                ASSERT((block.cLevel == 0x02), "[ERROR] cLevel for XXBlock should be 0x02 not %i", block.cLevel);
-
-                int32_t bidSize = 8;
-                // from the end of lcbTotal to the end of the data field
-                std::vector<types::byte_t> bidBytes = utils::slice(blockBytes, (int64_t)8, trailer.cb + (int64_t)8, trailer.cb);
-                for (int32_t i = 0; i < block.cEnt; i++)
+                for (const XBlock& xblock : xblocks)
                 {
-                    int32_t start = i * bidSize;
-                    int32_t end = ((int64_t)i + 1) * bidSize;
-                    ASSERT((end - start == bidSize), "[ERROR] BID must be of size 8 not %i", (end - start));
-                    block.rgbid.push_back(core::readBID(utils::slice(bidBytes, start, end, bidSize)));
+                    for (const core::BID& bid : xblock.rgbid)
+                    {
+                        BBTEntry bbt = m_getBBT(bid);
+                        const auto [blockSize, offset] = getBlockTotalSize(bbt.cb);
+                        std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref, blockSize);
+                        BlockTrailer trailer = sliceReadBlockTrailer(bytes, blockSize, &bbt.bref);
+                        m_dataBlocks.push_back(_readDataBlock(bytes, trailer, blockSize));
+                    }
                 }
-                return block;
             }
-
 
         private:
             core::Ref<std::ifstream> m_file;
             core::BREF m_bref;
+            GetBBT_t m_getBBT;
             uint64_t m_sizeofFirstBlockData{ 0 };
             std::vector<DataBlock> m_dataBlocks{};
             //std::vector<XBlock> m_xBlocks{};
             //std::vector<XXBlock> m_xxBlocks{};
+        };
+        /**
+         * @brief SLENTRY are records that refer to internal subnodes of a node.
+        */
+        struct SLEntry
+        {
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): Local NID of the subnode. This NID is guaranteed to be
+            /// unique only within the parent node.
+            core::NID nid;
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): The BID of the data block associated with the
+            /// subnode.
+            core::BID bidData;
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): If nonzero, the BID of the subnode of this subnode.
+            core::BID bidSub;
+
+            SLEntry(const std::vector<types::byte_t>& bytes)
+            {
+                ASSERT((bytes.size() == 24), "[ERROR]");
+                utils::ByteView view(bytes);
+                nid = view.entry<core::NID>(8);//core::NID(utils::slice(bytes, 0, 8, 8));
+                bidData = view.entry<core::BID>(8);//core::BID(utils::slice(bytes, 8, 16, 8));
+                bidSub = view.entry<core::BID>(8);//core::BID(utils::slice(bytes, 16, 24, 8));
+            }
+        };
+
+        /*
+        * @brief SIENTRY are intermediate records that point to SLBLOCKs.
+        */
+        struct SIEntry
+        {
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): The key NID value to the next-level child block. This NID is
+            /// only unique within the parent node.The NID is extended to 8 bytes in order for Unicode PST files
+            /// to follow the general convention of 8 - byte indices
+            core::NID nid;
+            /// (Unicode: 8 bytes; ANSI: 4 bytes): The BID of the SLBLOCK
+            core::BID bid;
+
+            SIEntry(const std::vector<types::byte_t>& bytes)
+            {
+                ASSERT((bytes.size() == 16), "[ERROR]");
+                utils::ByteView view(bytes);
+                nid = view.entry<core::NID>(8);
+                bid = view.entry<core::BID>(8);
+            }
+        };
+
+        struct SLBlock
+        {
+            /// (1 byte): Block type; MUST be set to 0x02.
+            uint8_t btype;
+            /// (1 byte): MUST be set to 0x00.
+            uint8_t cLevel;
+            /// (2 bytes): The number of SLENTRYs in the SLBLOCK. This value and the number of elements in
+            /// the rgentries array MUST be non - zero.When this value transitions to zero, it is required for the
+            /// block to be deleted.
+            uint16_t cEnt;
+            /// (4 bytes, Unicode only): Padding; MUST be set to zero.
+            uint32_t dwPadding;
+            /// (variable size) Array of SLENTRY structures.The size is equal to the number of entries
+            /// indicated by cEnt multiplied by the size of an SLENTRY(24 bytes for Unicode PST files)
+            std::vector<SLEntry> entries;
+            /// (Unicode: 16 bytes): A BLOCKTRAILER structure
+            BlockTrailer trailer;
+
+            SLBlock(const std::vector<types::byte_t>& bytes, core::BREF bref)
+            {
+                ASSERT(bref.bid.isInternal(), "[ERROR]");
+                utils::ByteView view(bytes);
+                btype = view.read<uint8_t>(1); //utils::slice(bytes, 0, 1, 1, utils::toT_l<uint8_t>);
+                cLevel = view.read<uint8_t>(1); //utils::slice(bytes, 1, 2, 1, utils::toT_l<uint8_t>);
+                cEnt = view.read<uint16_t>(2); //utils::slice(bytes, 2, 4, 2, utils::toT_l<uint16_t>);
+                dwPadding = view.read<uint32_t>(4); //utils::slice(bytes, 4, 8, 2, utils::toT_l<uint32_t>);
+                entries = view.entries<SLEntry>(cEnt, 24);
+
+                /// rgbPadding (optional, variable): This field is present if the total size of all of the other fields is not
+                /// a multiple of 64. The size of this field is the smallest number of bytes required to make the size of
+                ///    the SLBLOCK a multiple of 64. 
+                trailer = BlockTrailer(view.takeLast(16), bref);
+
+                ASSERT((btype == 0x02), "[ERROR]");
+                ASSERT((cLevel == 0x00), "[ERROR]");
+                ASSERT((cEnt != 0), "[ERROR]");
+            }
+        };
+
+        struct SIBlock
+        {
+            /// (1 byte): Block type; MUST be set to 0x02.
+            uint8_t btype;
+            /// (1 byte): MUST be set to 0x01.
+            uint8_t cLevel;
+            /// (2 bytes): The number of SIENTRYs in the SIBLOCK.
+            uint16_t cEnt;
+            /// (4 bytes, Unicode only): Padding; MUST be set to zero.
+            uint32_t dwPadding;
+            /// (variable size): Array of SIENTRY structures. The size is equal to the number of entries
+            /// indicated by cEnt multiplied by the size of an SIENTRY(16 bytes for Unicode PST files)
+            std::vector<SIEntry> entries;
+            /// (16 bytes)
+            BlockTrailer trailer;
+
+            SIBlock(const std::vector<types::byte_t>& bytes, core::BREF bref)
+            {
+                ASSERT(bref.bid.isInternal(), "[ERROR]");
+                utils::ByteView view(bytes);
+                btype = view.read<uint8_t>(1);
+                cLevel = view.read<uint8_t>(1);
+                cEnt = view.read<uint16_t>(2);
+                dwPadding = view.read<uint32_t>(4);
+                entries = view.entries<SIEntry>(cEnt, 16);
+                /*
+                * rgbPadding (optional, variable): This field is present if the total size of all of the other fields is not
+                * a multiple of 64. The size of this field is the smallest number of bytes required to make the size of
+                * the SIBLOCK a multiple of 64. Implementations MUST ignore this field.
+                */
+                trailer = BlockTrailer(view.takeLast(16), bref);
+
+                ASSERT((btype == 0x02), "[ERROR]");
+                ASSERT((cLevel == 0x01), "[ERROR]");
+            }
+        };
+
+        class SubNodeBTree
+        {
+        public:
+            using GetBBT_t = std::function<BBTEntry(const core::BID& bid)>;
+            using RawNID_Type = uint32_t;
+            
+        public:
+            SubNodeBTree(NBTEntry nbt, core::Ref<std::ifstream> file, GetBBT_t&& getBBT)
+                : m_nbt(nbt), m_file(file), m_getBBT(getBBT)
+            {
+                if (m_nbt.hasSubNode()) // When NID == 0 there is no subnode tree
+                {
+                    const auto [bytes, bbt] = readBlock(nbt.bidSub);
+                    const uint8_t clevel = bytes.at(1);
+                    if (clevel == 0x00) // SL Block
+                    {
+                        m_slblocks.push_back(SLBlock{ bytes, bbt.bref });
+                    }
+                    else if (clevel == 0x01) // SI Block
+                    {
+                        SIBlock siblock{ bytes, bbt.bref };
+                        for (const auto& sientry : siblock.entries)
+                        {
+                            const auto [_bytes, _bbt] = readBlock(sientry.bid);
+                            m_slblocks.push_back(SLBlock(_bytes, _bbt.bref));
+                        }
+                    }
+                    else
+                    {
+                        ASSERT(false, "[ERROR] Unknown SubNode Type");
+                    }
+
+                    for (const auto& slblock : m_slblocks)
+                    {
+                        for (const auto& slentry : slblock.entries)
+                        {
+                            if (slentry.bidSub != 0) // there another subnode btree
+                            {
+                                // TODO setup subtrees
+                                //m_subtrees.push_back(SubNodeBTree(slentry))
+                            }
+                            const uint32_t id = slentry.nid.getNIDRaw();
+                            ASSERT((m_datablocks.count(id) == 0), "[ERROR] Duplicate entry");
+                            const auto [blockBytes, _bbt] = readBlock(slentry.bidData);
+                            m_datablocks[id] = readDataBlock(blockBytes, _bbt.bref);
+                        }
+                    }
+                }
+            }
+
+            std::pair<std::vector<types::byte_t>, bool> at(core::NID nid) const
+            {
+                if (m_datablocks.count(nid.getNIDRaw()) > 0)
+                {
+                    return { m_datablocks.at(nid.getNIDRaw()).data, true };
+                }
+                for (const auto& subtree : m_subtrees)
+                {
+                    const auto& [data, found] = subtree.at(nid);
+                    if (found)
+                    {
+                        return { data, found };
+                    }
+                }
+                LOG("[WARN] Failed to find DataBlock in SubNode Tree");
+                return { std::vector<types::byte_t>{}, false };
+            }
+
+            std::pair<std::vector<types::byte_t>, BBTEntry> readBlock(core::BID bid)
+            {
+                const BBTEntry bbt = m_getBBT(bid);
+                const size_t totalBlockSize = calcBlockSize(bbt.cb);
+                m_file->seekg(bbt.bref.ib, std::ios::beg);
+                return { utils::readBytes(m_file.get(), totalBlockSize), bbt };
+            }
+
+            size_t calcBlockSize(size_t dataSize)
+            {
+                const size_t sBType = 1;
+                const size_t sCLevel = 1;
+                const size_t sCEnt = 2;
+                const size_t sDwPadding = 4;
+                const size_t blockTrailerSize = 16;
+                const size_t totalBlockSizeWithoutPadding = dataSize + blockTrailerSize + sBType + sCLevel + sCEnt + sDwPadding;
+
+                const size_t multiple = 64;
+                const size_t remainder = totalBlockSizeWithoutPadding % multiple;
+                const size_t offset = (multiple * (remainder != 0)) - remainder;
+                // The block size is the smallest multiple of 64 that can hold both the data and the block trailer.
+                return totalBlockSizeWithoutPadding + offset;
+            }
+
+        private:
+            NBTEntry m_nbt;
+            core::Ref<std::ifstream> m_file;
+            GetBBT_t m_getBBT;
+            std::vector<SLBlock> m_slblocks;
+            std::vector<SubNodeBTree> m_subtrees;
+            std::unordered_map<RawNID_Type, DataBlock> m_datablocks;
         };
 
         template<typename LeafEntryType>
@@ -1085,8 +1418,21 @@ namespace reader {
 
             DataTree InitDataTree(core::BREF blockBref, int64_t sizeofBlockData) const
             {
-                // TODO: The DataTree uses seekg on m_file during construction so really shouldnt be marked const.
-                return DataTree(core::Ref<std::ifstream>(m_file), blockBref, sizeofBlockData);
+                return DataTree(
+                    core::Ref<std::ifstream>(m_file), 
+                    [this](const core::BID& bid) { return this->get(bid); },
+                    blockBref, 
+                    sizeofBlockData
+                );
+            }
+
+            SubNodeBTree InitSubNodeBTree(const ndb::NBTEntry& nbt) const
+            {
+                return SubNodeBTree(
+                    nbt,
+                    core::Ref<std::ifstream>(m_file),
+                    [this](const core::BID& bid) { return this->get(bid); }
+                );
             }
 
 

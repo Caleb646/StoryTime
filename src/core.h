@@ -76,8 +76,8 @@ namespace reader {
             bool operator==(const BID& other) const
 			{
                 ASSERT((m_isSetup == true), "[ERROR] BID not setup");
-                return getBidIndex() == other.getBidIndex();
-                //return getBidRaw() == other.getBidRaw();
+                //return getBidIndex() == other.getBidIndex();
+                return getBidRaw() == other.getBidRaw();
 			}
 
             static constexpr size_t id()
@@ -101,7 +101,10 @@ namespace reader {
             NID() = default;
             NID(uint32_t _nid) : m_nid(_nid) {}
             NID(const std::vector<types::byte_t>& bytes) 
-                : m_nid(utils::toT_l<decltype(m_nid)>(bytes)) {}
+            {
+                utils::ByteView view(bytes);
+                m_nid = view.read<uint32_t>(4);
+            }
 
             bool operator==(const NID& other) const
 			{
@@ -260,6 +263,8 @@ namespace reader {
         private:
             std::reference_wrapper<T> m_ref;
         };
+
+
 	}
 }
 
