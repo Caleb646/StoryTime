@@ -280,7 +280,7 @@ namespace reader
 				ASSERT((data.size() == 24ull), "EntryID data size is not 24 bytes");
 				rgbFlags = utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>);
 				uuid = utils::slice(data, 4, 20, 16);
-				nid = core::readNID(utils::slice(data, 20, 24, 4));
+				nid = core::NID(utils::slice(data, 20, 24, 4));
 				ASSERT((uuid == pidTagRecordKey), "EntryID uuid does not match pidTagRecordKey");
 			}
 		};

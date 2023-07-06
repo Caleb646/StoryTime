@@ -48,74 +48,6 @@ namespace reader
             ASSERT(m_file.is_open(), "[ERROR] Failed to open [file] %s", path.c_str());
         }
 
-        core::Root _readRoot(const std::vector<types::byte_t>& bytes)
-        {
-            /*
-            * dwReserved (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
-            *  Creators of a new PST file MUST initialize this value to zero.
-            */
-            utils::slice(bytes, 0, 4, 4);
-
-            /*
-            * ibFileEof (Unicode: 8 bytes; ANSI 4 bytes): The size of the PST file, in bytes. 
-            */
-            std::uint64_t ibFileEof = utils::slice(bytes, 4, 12, 8, utils::toT_l<std::uint64_t>);
-            LOG("[INFO] [file size in bytes] %u", ibFileEof);
-
-            /*
-            * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3) 
-            *  that contains the absolute file offset to the last AMap page of the PST file. 
-            */
-            std::uint64_t ibAMapLast = utils::slice(bytes, 12, 20, 8, utils::toT_l<uint64_t>);
-
-            /*
-            * cbAMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all AMaps, combined. 
-            
-            * cbPMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all PMaps, combined. 
-            *  Because the PMap is deprecated, this value SHOULD be zero. Creators of new PST files MUST initialize this value to zero.
-            */
-            std::vector<types::byte_t> cbAMapFree = utils::slice(bytes, 20, 28, 8);
-            std::vector<types::byte_t> cbPMapFree = utils::slice(bytes, 28, 36, 8);
-
-            /*
-            * BREFNBT (Unicode: 16 bytes; ANSI: 8 bytes): A BREF structure (section 2.2.2.4) that references the 
-            *  root page of the Node BTree (NBT). 
-            
-            * BREFBBT (Unicode: 16 bytes; ANSI: 8 bytes): A BREF 
-            *  structure that references the root page of the Block BTree (BBT). 
-            
-            * fAMapValid (1 types::byte_t): Indicates whether all of the AMaps in this PST file are valid. 
-            *  For more details, see section 2.6.1.3.7. This value MUST be set to one of the pre-defined values specified in the following table.
-            * 
-            * Value Friendly name Meaning 
-            * 0x00 INVALID_AMAP One or more AMaps in the PST are INVALID 
-            * 0x01 VALID_AMAP1 Deprecated. Implementations SHOULD NOT use this The AMaps are VALID.
-            * 0x02 VALID_AMAP2 value. The AMaps are VALID.
-            */
-            const std::vector<types::byte_t> BREFNBT = utils::slice(bytes, 36, 52, 16);
-            const std::vector<types::byte_t> BREFBBT = utils::slice(bytes, 52, 68, 16);
-            const uint8_t fAMapValid = utils::slice(bytes, 68, 69, 1, utils::toT_l<uint8_t>);
-            ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
-            /*
-            * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
-            *  Creators of a new PST file MUST initialize this value to zero.
-            */
-            const std::vector<types::byte_t> bReserved = utils::slice(bytes, 69, 70, 1);
-
-            /*
-            * wReserved (2 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
-            *  Creators of a new PST file MUST initialize this value to zero.
-            */
-            const std::vector<types::byte_t> wReserved = utils::slice(bytes, 70, 72, 2);
-
-            core::Root myRoot{};
-            myRoot.fileSize = ibFileEof;
-            myRoot.nodeBTreeRootPage = core::readBREF(BREFNBT, "Root Page for Node BTree");
-            myRoot.blockBTreeRootPage = core::readBREF(BREFBBT, "Root Page for Block BTree");
-            myRoot.ibAMapLast = ibAMapLast;
-            return myRoot;
-        }
-
         core::Header _readHeader(std::ifstream& file)
         {
             ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
@@ -217,11 +149,11 @@ namespace reader
            std::vector<types::byte_t> rgnidsBytes = utils::slice(bytes, 44, 172, 128);
            core::NID nids[32];
 
-           for (int64_t i = 0; i < 32; i++)
+           for (size_t i = 0; i < 32; i++)
            {
-               int64_t start = i * 4;
-               int64_t end = (i + 1) * 4;
-               nids[i] = core::readNID(utils::slice(rgnidsBytes, start, end, (int64_t)4));
+               size_t start = i * 4;
+               size_t end = (i + 1) * 4;
+               nids[i] = core::NID(utils::slice(rgnidsBytes, start, end, 4ULL));
            }
 
            for (int64_t i = 0; i < 32; i++)
@@ -340,10 +272,7 @@ namespace reader
            std::vector<types::byte_t> rgbReserved3 = utils::slice(bytes, 532, 564, 32);
            //utils::isEqual(rgbReserved3, std::vector<types::byte_t>(32, 0x00), "rgbReserved3");
 
-           core::Header header{};
-           header.root = _readRoot(root);
-
-           return header;
+           return core::Header(core::Root::Init(root));
         }
 
     private:

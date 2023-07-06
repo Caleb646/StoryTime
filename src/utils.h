@@ -129,8 +129,7 @@ namespace reader {
         template<typename T>
         types::PType getPType(T ptype)
         {
-            static_assert(sizeof(T) == sizeof(uint8_t));
-            switch (static_cast<uint8_t>(ptype))
+            switch (static_cast<uint32_t>(ptype))
             {
             case 0x80:
                 return types::PType::BBT;
@@ -178,7 +177,7 @@ namespace reader {
         template<typename T>
         types::NIDType getNIDType(T t)
         {
-            switch (t)
+            switch (static_cast<uint32_t>(t))
             {
             case 0x00:
                 return types::NIDType::HID;
@@ -455,7 +454,7 @@ namespace reader {
             }
         }
 
-        types::PidTagType PidTagType(uint64_t id)
+        types::PidTagType PidTagType(uint32_t id)
         {
             switch (id)
             {
@@ -776,6 +775,11 @@ namespace reader {
             {
                 m_start += nBytes;
                 return *this;
+            }
+
+            void setStart(size_t newStart)
+            {
+                m_start = newStart;
             }
 
         private:

@@ -80,6 +80,8 @@ namespace reader {
                 return getBidRaw() == other.getBidRaw();
 			}
 
+            [[nodiscard]] bool isSetup() const { return m_isSetup; }
+
             static constexpr size_t id()
             {
                 return 4;
@@ -167,52 +169,21 @@ namespace reader {
              *  respect to the beginning of the file. The IB is a simple unsigned integer value and
              *  is 64 bits in Unicode versions and 32 bits in ANSI versions.
             */
+            /// The IB (Byte Index) is used to represent an absolute offset within the PST file with
+            /// respect to the beginning of the file.The IB is a simple unsigned integer value and
+            /// is 64 bits in Unicode versions and 32 bits in ANSI versions.
             std::uint64_t ib{};
-            std::string name{"NOT SET"};
+
+            BREF() = default;
+
+            explicit BREF(const std::vector<types::byte_t>& bytes)
+            {
+                ASSERT((bytes.size() == 16), "[ERROR] BREF must be 16 bytes not %i", bytes.size());
+                utils::ByteView view(bytes);
+                bid = view.entry<BID>(8);
+                ib = view.read<uint64_t>(8);
+            }
         };
-
-        core::BID readBID(const std::vector<types::byte_t>& bytes)
-        {
-            ASSERT((bytes.size() == 8), "[ERROR] BID must be 8 bytes not %i", bytes.size());
-
-            /**
-            * There are two types of BIDs
-            *
-            * BIDs used in the context of Pages (section 2.2.2.7) use all of the bits of the structure (below) and are incremented by 1. 2.
-
-            * Block BIDs (section 2.2.2.8) reserve the two least significant bits for flags (see below). As
-                a result these increment by 4 each time a new one is assigned.
-            */
-            return BID(bytes);
-        }
-
-        core::NID readNID(const std::vector<types::byte_t>& bytes)
-        {
-            /*
-            * nidType (5 bits): Identifies the type of the node represented by the NID.
-            *   The following table specifies a list of values for nidType. However, it is worth
-            *   noting that nidType has no meaning to the structures defined in the NDB Layer.
-            *
-            * nidIndex (27 bits): The identification portion of the NID.
-            */
-
-            ASSERT((bytes.size() == 4), "[ERROR] NID must be 4 bytes not %i", bytes.size());
-            return NID(bytes);
-        }
-
-        core::BREF readBREF(const std::vector<types::byte_t>& bytes, std::string name = "NOT SET")
-        {
-            ASSERT((bytes.size() == 16), "[ERROR] BREF must be 16 bytes not %i", bytes.size());
-            // bid (Unicode: 64 bits; ANSI: 32 bits): A BID structure, as specified in section
-            std::vector<types::byte_t> bid = utils::slice(bytes, 0, 8, 8);
-            // ib (Unicode: 64 bits; ANSI: 32 bits): An IB structure, as specified in section 2.2.2.3
-            core::BREF bref{};
-            bref.name = name;
-            bref.bid = readBID(bid);
-            bref.ib = utils::slice(bytes, 8, 16, 8, utils::toT_l<decltype(bref.ib)>);
-
-            return bref;
-        }
 
         struct Root
         {
@@ -238,19 +209,91 @@ namespace reader {
             *   and CREF. The IB is the offset within the file where the block is located. The CB is the
             *   count of bytes stored within the block. The CREF is the count of references to the data stored within the block.
             */
-            core::BREF nodeBTreeRootPage{};
-            core::BREF blockBTreeRootPage{};
+            core::BREF nodeBTreeRootPage;
+            core::BREF blockBTreeRootPage;
 
             /*
             * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3)
             *  that contains the absolute file offset to the last AMap page of the PST file.
             */
             std::uint64_t ibAMapLast{};
+
+            static Root Init(const std::vector<types::byte_t>& bytes)
+            {
+                ASSERT((bytes.size() == 72), "[ERROR]");
+                utils::ByteView view(bytes);
+                /*
+                * dwReserved (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it.
+                *  Creators of a new PST file MUST initialize this value to zero.
+                */
+                view.skip(4);
+
+                /*
+                * ibFileEof (Unicode: 8 bytes; ANSI 4 bytes): The size of the PST file, in bytes.
+                */
+                std::uint64_t ibFileEof = view.read<uint64_t>(8); 
+                LOG("[INFO] [file size in bytes] %u", ibFileEof);
+
+                /*
+                * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3)
+                *  that contains the absolute file offset to the last AMap page of the PST file.
+                */
+                std::uint64_t ibAMapLast = view.read<uint64_t>(8); // utils::slice(bytes, 12, 20, 8, utils::toT_l<uint64_t>);
+
+                /*
+                * cbAMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all AMaps, combined.
+
+                * cbPMapFree (Unicode: 8 bytes; ANSI 4 bytes): The total free space in all PMaps, combined.
+                *  Because the PMap is deprecated, this value SHOULD be zero. Creators of new PST files MUST initialize this value to zero.
+                */
+                std::vector<types::byte_t> cbAMapFree = view.read(8); //utils::slice(bytes, 20, 28, 8);
+                std::vector<types::byte_t> cbPMapFree = view.read(8); //utils::slice(bytes, 28, 36, 8);
+
+                /*
+                * BREFNBT (Unicode: 16 bytes; ANSI: 8 bytes): A BREF structure (section 2.2.2.4) that references the
+                *  root page of the Node BTree (NBT).
+
+                * BREFBBT (Unicode: 16 bytes; ANSI: 8 bytes): A BREF
+                *  structure that references the root page of the Block BTree (BBT).
+
+                * fAMapValid (1 types::byte_t): Indicates whether all of the AMaps in this PST file are valid.
+                *  For more details, see section 2.6.1.3.7. This value MUST be set to one of the pre-defined values specified in the following table.
+                *
+                * Value Friendly name Meaning
+                * 0x00 INVALID_AMAP One or more AMaps in the PST are INVALID
+                * 0x01 VALID_AMAP1 Deprecated. Implementations SHOULD NOT use this The AMaps are VALID.
+                * 0x02 VALID_AMAP2 value. The AMaps are VALID.
+                */
+                const BREF BREFNBT = view.entry<BREF>(16); // utils::slice(bytes, 36, 52, 16);
+                const BREF BREFBBT = view.entry<BREF>(16);  //utils::slice(bytes, 52, 68, 16);
+                const uint8_t fAMapValid = view.read<uint8_t>(1); // utils::slice(bytes, 68, 69, 1, utils::toT_l<uint8_t>);
+                ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
+                /*
+                * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it.
+                *  Creators of a new PST file MUST initialize this value to zero.
+                */
+                const uint8_t bReserved = view.read<uint8_t>(1);// utils::slice(bytes, 69, 70, 1);
+
+                /*
+                * wReserved (2 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it.
+                *  Creators of a new PST file MUST initialize this value to zero.
+                */
+                const uint16_t wReserved = view.read<uint16_t>(2);// utils::slice(bytes, 70, 72, 2);
+
+                return Root(BREFNBT, ibFileEof, BREFBBT, ibAMapLast);
+            }
+
+            explicit Root(BREF nodeRootPage, uint64_t fileSize_, BREF blockRootPage, uint64_t ibMap)
+                : nodeBTreeRootPage(nodeRootPage), blockBTreeRootPage(blockRootPage), fileSize(fileSize_),
+                ibAMapLast(ibMap) {}
         };
 
         struct Header
         {
-            Root root{};
+            const Root root;
+
+            explicit Header(Root&& root)
+                : root(root) {}
         };
 
         template<typename T>
