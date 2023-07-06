@@ -99,7 +99,7 @@ namespace reader {
         {
         public:
             NID() = default;
-            NID(uint32_t _nid) : m_nid(_nid) {}
+            constexpr NID(uint32_t _nid) : m_nid(_nid) {}
             NID(const std::vector<types::byte_t>& bytes) 
             {
                 utils::ByteView view(bytes);
@@ -150,12 +150,12 @@ namespace reader {
         * Special NID Values
         * 
         */
-        NID NID_MESSAGE_STORE(0x21);
-        NID NID_NAME_TO_ID_MAP(0x61);
-        NID NID_NORMAL_FOLDER_TEMPLATE(0xA1);
-        NID NID_SEARCH_FOLDER_TEMPLATE(0xC1);
-        NID NID_ROOT_FOLDER(0x122);
-        NID NID_SEARCH_MANAGEMENT_QUEUE(0x1E1);
+        constexpr NID NID_MESSAGE_STORE(0x21);
+        constexpr NID NID_NAME_TO_ID_MAP(0x61);
+        constexpr NID NID_NORMAL_FOLDER_TEMPLATE(0xA1);
+        constexpr NID NID_SEARCH_FOLDER_TEMPLATE(0xC1);
+        constexpr NID NID_ROOT_FOLDER(0x122);
+        constexpr NID NID_SEARCH_MANAGEMENT_QUEUE(0x1E1);
 
         // The BREF is a record that maps a BID to its absolute file offset location. 
         struct BREF

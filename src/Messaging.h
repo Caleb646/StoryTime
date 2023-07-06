@@ -26,12 +26,82 @@ namespace reader
 		public:
 			static MessageObject Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
+				ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
 				const ndb::NBTEntry nbt = ndb->get(nid);
-				const ndb::BBTEntry bbtData = ndb->get(nbt.bidData);
-				const ndb::BBTEntry bbtSub = ndb->get(nbt.bidSub);
-				const ndb::DataTree dataTree = ndb->InitDataTree(bbtData.bref, bbtData.cb);
-				return MessageObject();
+				ndb::SubNodeBTree subnodeBTree = ndb->InitSubNodeBTree(nbt.bidSub);
+				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.nid, ndb);
+
+				ndb::DataTree* recipData = subnodeBTree.at(RECIPIENT_TC_NID);
+				ASSERT((recipData != nullptr), "[ERROR]");
+				ltp::TableContext recip = ltp::TableContext::Init(nid, ndb, std::move(*recipData));
+
+				ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
+				ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+
+				ASSERT((recip.hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::AddressType, types::PropertyType::String)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)), "[ERROR]");
+
+				ASSERT((recip.hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+				ASSERT((recip.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+
+				const ltp::TColDesc ltpRowIdCol = recip.findCol(types::PidTagType::LtpRowId);
+				const ltp::TColDesc ltpRowVerCol = recip.findCol(types::PidTagType::LtpRowVer);
+				ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+				ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+
+				const auto m = recip.at(recip.rowIDs()[0], 1);
+
+
+				//ndb::DataTree* attachTableData = subnodeBTree.at(ATTACH_TC_NID);
+				//ndb::DataTree* attachData = subnodeBTree.at(ATTACH_NID);
+				return MessageObject(
+					nid, 
+					ndb, 
+					ndb->InitSubNodeBTree(nbt.bidSub), 
+					std::move(pc), 
+					std::move(recip)
+				);
 			}
+		private:
+			MessageObject(
+				core::NID nid, 
+				core::Ref<const ndb::NDB> ndb, 
+				ndb::SubNodeBTree&& subTree,
+				ltp::PropertyContext&& pc,
+				ltp::TableContext&& recip
+				)
+				: m_nid(nid), m_ndb(ndb), m_subtree(subTree), m_pc(pc), m_recip(recip)
+			{
+
+			}
+		private:
+			core::NID m_nid;
+			core::Ref<const ndb::NDB> m_ndb;
+			ndb::SubNodeBTree m_subtree;
+			ltp::PropertyContext m_pc;
+			ltp::TableContext m_recip;
+
+			/// (required) The subnode is a Message Recipient Table
+			static constexpr core::NID RECIPIENT_TC_NID{ 0x692 };		
+			/// (optional) The subnode is an Attachment TABLE
+			static constexpr core::NID ATTACH_TC_NID{ 0x671 };
+			/// (optional) The subnode is an Attachment OBJECT
+			static constexpr core::NID ATTACH_NID{ 0x8025 };
 		};
 	
 		/**
@@ -151,6 +221,7 @@ namespace reader
 				  m_assoc(assoc)
 			{
 				_setupSubFolders();
+				_setupMessages();
 			}
 
 			void _setupSubFolders()
@@ -164,11 +235,21 @@ namespace reader
 				* (first being 0th) sub-Folder object row in the Row Matrix is 0x8022.
 				*/
 
-				std::vector<ltp::TCRowID> rowIDs = m_hier.rowIDs();
+				const std::vector<ltp::TCRowID> rowIDs = m_hier.rowIDs();
 				for (const auto& rowid : rowIDs)
 				{
-					core::NID rowNID(rowid.dwRowID);
+					const core::NID rowNID(rowid.dwRowID);
 					m_subfolders.push_back(Folder::Init(rowNID, m_ndb));
+				}
+			}
+
+			void _setupMessages()
+			{
+				const std::vector<ltp::TCRowID> rowIDs = m_contents.rowIDs();
+				for (const auto& rowid : rowIDs)
+				{
+					const core::NID rowNID(rowid.dwRowID);
+					m_messages.push_back(MessageObject::Init(rowNID, m_ndb));
 				}
 			}
 
@@ -180,6 +261,7 @@ namespace reader
 			ltp::TableContext m_contents;
 			ltp::TableContext m_assoc;
 			std::vector<Folder> m_subfolders{};
+			std::vector<MessageObject> m_messages{};
 		};
 
 		struct EntryID

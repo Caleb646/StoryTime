@@ -506,6 +506,19 @@ namespace reader {
                 case 0x0E17: return types::PidTagType::MessageStatus               ;
                 case 0x0E3C: return types::PidTagType::ReplCopiedfromVersionhistory;
                 case 0x0E3D: return types::PidTagType::ReplCopiedfromItemid        ;
+                case 0x3007: return types::PidTagType::CreationTime;
+                case 0x3008: return types::PidTagType::LastModificationTime;
+                case 0x300b: return types::PidTagType::SearchKey;
+
+                case 0x0c15: return types::PidTagType::RecipientType;
+                case 0x0E0F: return types::PidTagType::Responsibility;
+                case 0x0FFE: return types::PidTagType::ObjectType;
+                case 0x0FFF: return types::PidTagType::EntryId;
+                case 0x3002: return types::PidTagType::AddressType;
+                case 0x3003: return types::PidTagType::EmailAddress;
+                case 0x3900: return types::PidTagType::DisplayType;
+                case 0x39FF: return types::PidTagType::SevenBitDisplayName;
+                case 0x3A40: return types::PidTagType::SendRichInfo;
 
                 default:
                     //ASSERT(false, "Invalid PidTagType");
@@ -683,6 +696,8 @@ namespace reader {
         public:
             ByteView(const std::vector<types::byte_t>& bytes)
                 : m_bytes(bytes) {}
+            ByteView(const std::vector<types::byte_t>& bytes, size_t start)
+                : m_bytes(bytes), m_start(start) {}
             ByteView(const ByteView&) = delete;
             ByteView(ByteView&&) = delete;
             ByteView& operator=(const ByteView&) = delete;
@@ -701,6 +716,21 @@ namespace reader {
                 const size_t start = m_start;
                 m_start += size;
                 return slice(m_bytes, start, start + size, size, toT_l<PrimitiveType>);
+            }
+
+            template<typename PrimitiveType>
+            std::vector<PrimitiveType> read(size_t nPrimitives, size_t singlePrimitiveSize)
+            {
+                std::vector<PrimitiveType> res{};
+                res.reserve(nPrimitives);
+
+                for (size_t i = 0; i < nPrimitives; i++)
+                {
+                    // Do NOT need to increment m_start here because the
+                    // read method is doing it for us.
+                    res.push_back(read<PrimitiveType>(singlePrimitiveSize));
+                }
+                return res;
             }
 
             template<typename EntryType>

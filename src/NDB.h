@@ -688,6 +688,7 @@ namespace reader {
 
         static DataBlock readDataBlock(const std::vector<types::byte_t>& blockBytes, core::BREF bref)
         {
+            ASSERT(!bref.bid.isInternal(), "[ERROR] A Data Block can NOT be marked as Internal");
             utils::ByteView view(blockBytes);
             BlockTrailer trailer(view.takeLast(16), bref);
             return _readDataBlock(blockBytes, trailer, blockBytes.size());
@@ -755,7 +756,7 @@ namespace reader {
             using GetBBT_t = std::function<BBTEntry(const core::BID& bid)>;
 
         public:
-            DataTree(core::Ref<std::ifstream> file, GetBBT_t&& getBBT, core::BREF bref, uint64_t sizeOfBlockData)
+            DataTree(core::Ref<std::ifstream> file, const GetBBT_t& getBBT, core::BREF bref, uint64_t sizeOfBlockData)
                 : m_file(file), m_bref(bref), m_getBBT(getBBT), m_sizeofFirstBlockData(sizeOfBlockData)
             {
                 static_assert(std::is_move_constructible_v<DataTree>, "DataTree must be move constructible");
@@ -793,6 +794,19 @@ namespace reader {
                     
                 _init();
                 return m_dataBlocks;
+            }
+
+            void init()
+            {
+                if (m_dataBlocks.empty())
+                {
+                    _init();
+                }
+            }
+
+            const DataBlock& at(size_t idx) const
+            {
+                return m_dataBlocks.at(idx);
             }
 
             /**
@@ -937,8 +951,6 @@ namespace reader {
             GetBBT_t m_getBBT;
             uint64_t m_sizeofFirstBlockData{ 0 };
             std::vector<DataBlock> m_dataBlocks{};
-            //std::vector<XBlock> m_xBlocks{};
-            //std::vector<XXBlock> m_xxBlocks{};
         };
         /**
          * @brief SLENTRY are records that refer to internal subnodes of a node.
@@ -1068,12 +1080,13 @@ namespace reader {
             using RawNID_Type = uint32_t;
             
         public:
-            SubNodeBTree(NBTEntry nbt, core::Ref<std::ifstream> file, GetBBT_t&& getBBT)
-                : m_nbt(nbt), m_file(file), m_getBBT(getBBT)
+
+            SubNodeBTree(core::BID bid, core::Ref<std::ifstream> file, const GetBBT_t& getBBT)
+                : m_bid(bid), m_file(file), m_getBBT(getBBT)
             {
-                if (m_nbt.hasSubNode()) // When NID == 0 there is no subnode tree
+                if (m_bid.getBidRaw() != 0) // When BID == 0 there is no subnode tree
                 {
-                    const auto [bytes, bbt] = readBlock(nbt.bidSub);
+                    const auto [bytes, bbt] = readBlock(m_bid);
                     const uint8_t clevel = bytes.at(1);
                     if (clevel == 0x00) // SL Block
                     {
@@ -1084,8 +1097,8 @@ namespace reader {
                         SIBlock siblock{ bytes, bbt.bref };
                         for (const auto& sientry : siblock.entries)
                         {
-                            const auto [_bytes, _bbt] = readBlock(sientry.bid);
-                            m_slblocks.push_back(SLBlock(_bytes, _bbt.bref));
+                            const auto [slBlockBytes, slBlockBBT] = readBlock(sientry.bid);
+                            m_slblocks.emplace_back(SLBlock(slBlockBytes, slBlockBBT.bref));
                         }
                     }
                     else
@@ -1095,38 +1108,61 @@ namespace reader {
 
                     for (const auto& slblock : m_slblocks)
                     {
-                        for (const auto& slentry : slblock.entries)
+                        for (const SLEntry& slentry : slblock.entries)
                         {
-                            if (slentry.bidSub != 0) // there another subnode btree
+                            if (slentry.bidSub.getBidRaw() != 0) // theres a nested subnode btree
                             {
-                                // TODO setup subtrees
-                                //m_subtrees.push_back(SubNodeBTree(slentry))
+                                LOG("[WARN] A nested SubNodeBTree was created");
+                                m_subtrees.emplace_back(SubNodeBTree(slentry.bidSub, m_file, m_getBBT));
                             }
-                            const uint32_t id = slentry.nid.getNIDRaw();
-                            ASSERT((m_datablocks.count(id) == 0), "[ERROR] Duplicate entry");
-                            const auto [blockBytes, _bbt] = readBlock(slentry.bidData);
-                            m_datablocks[id] = readDataBlock(blockBytes, _bbt.bref);
+                            const uint32_t nidID = slentry.nid.getNIDRaw();
+                            ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry");
+                            const auto [dataTreeBytes, dataTreeBBT] = readBlock(slentry.bidData);
+                            m_datatrees.emplace(
+                                std::piecewise_construct,
+                                std::forward_as_tuple(nidID),
+                                std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.bref, dataTreeBBT.cb)
+                            );
+                            m_datatrees.at(nidID).init();
                         }
                     }
                 }
             }
 
-            std::pair<std::vector<types::byte_t>, bool> at(core::NID nid) const
+            [[nodiscard]] DataTree* at(core::NID nid)
             {
-                if (m_datablocks.count(nid.getNIDRaw()) > 0)
+                if (m_datatrees.contains(nid.getNIDRaw()))
                 {
-                    return { m_datablocks.at(nid.getNIDRaw()).data, true };
+                    return &m_datatrees.at(nid.getNIDRaw());
                 }
-                for (const auto& subtree : m_subtrees)
+                for (SubNodeBTree& subtree : m_subtrees)
                 {
-                    const auto& [data, found] = subtree.at(nid);
-                    if (found)
+                    DataTree* data = subtree.at(nid);
+                    if (data != nullptr)
                     {
-                        return { data, found };
+                        return data;
                     }
                 }
                 LOG("[WARN] Failed to find DataBlock in SubNode Tree");
-                return { std::vector<types::byte_t>{}, false };
+                return nullptr;
+            }
+
+            [[nodiscard]] const DataTree* const at(core::NID nid) const
+            {
+                if (m_datatrees.contains(nid.getNIDRaw()))
+                {
+                    return &m_datatrees.at(nid.getNIDRaw());
+                }
+                for (const auto& subtree : m_subtrees)
+                {
+                    const auto data = subtree.at(nid);
+                    if (data != nullptr)
+                    {
+                        return data;
+                    }
+                }
+                LOG("[WARN] Failed to find DataBlock in SubNode Tree");
+                return nullptr;
             }
 
             std::pair<std::vector<types::byte_t>, BBTEntry> readBlock(core::BID bid)
@@ -1154,12 +1190,13 @@ namespace reader {
             }
 
         private:
-            NBTEntry m_nbt;
+            core::BID m_bid;
             core::Ref<std::ifstream> m_file;
             GetBBT_t m_getBBT;
             std::vector<SLBlock> m_slblocks;
             std::vector<SubNodeBTree> m_subtrees;
-            std::unordered_map<RawNID_Type, DataBlock> m_datablocks;
+            // uint32_t is a Raw NID
+            std::unordered_map<uint32_t, DataTree> m_datatrees;
         };
 
         template<typename LeafEntryType>
@@ -1426,10 +1463,13 @@ namespace reader {
                 );
             }
 
-            SubNodeBTree InitSubNodeBTree(const ndb::NBTEntry& nbt) const
+            SubNodeBTree InitSubNodeBTree(core::BID bid) const
             {
+
+
+
                 return SubNodeBTree(
-                    nbt,
+                    bid,
                     core::Ref<std::ifstream>(m_file),
                     [this](const core::BID& bid) { return this->get(bid); }
                 );

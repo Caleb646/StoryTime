@@ -184,8 +184,23 @@ namespace reader {
             MessageFlags                    =   0x0E07, //PtypInteger32
             MessageSize                     =   0x0E08, //PtypInteger32
             MessageStatus                   =   0x0E17, //PtypInteger32
-            ReplCopiedfromVersionhistory    = 0x0E3C, // PtypBinary PidTag
+            ReplCopiedfromVersionhistory    =   0x0E3C, // PtypBinary PidTag
             ReplCopiedfromItemid            =   0x0E3D, //PtypBinary PidTag Replication item ID information Y
+
+            CreationTime                    =   0x3007, // 
+            LastModificationTime            =   0x3008,
+            SearchKey                       =   0x300b,
+
+            RecipientType                   =   0x0c15, //PtypInteger32 PidTag Type of recipient.
+            Responsibility                  =   0x0E0F, // PtypBoolean PidTag Handling Responsibility.
+            ObjectType                      =   0x0FFE, //PtypInteger32 PidTag Recipient Object type.
+            EntryId                         =   0x0FFF, //PtypBinary PidTag EntryID of the recipient.
+            AddressType                     =   0x3002, // PtypString PidTag Type of recipient address.
+            EmailAddress                    =   0x3003, // PtypString PidTag E - mail address of recipient.
+            DisplayType                     =   0x3900, // PtypInteger32 PidTag Display type.
+            SevenBitDisplayName             =   0x39FF, //PtypString PidTag 7 - bit Display name.
+            SendRichInfo                    =   0x3A40, //PtypBoolean PidTag Send Rich info for recipient.
+
 
 
             Unknown				            =   0xFFFFFFF      
