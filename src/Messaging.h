@@ -28,20 +28,29 @@ namespace reader
 			{
 				ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
 				const ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::SubNodeBTree subnodeBTree = ndb->InitSubNodeBTree(nbt.bidSub);
-				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.nid, ndb);
-
-				ndb::DataTree* recipData = subnodeBTree.at(RECIPIENT_TC_NID);
-				ASSERT((recipData != nullptr), "[ERROR]");
-				ltp::TableContext recip = ltp::TableContext::Init(nid, ndb, std::move(*recipData));
+				ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.bidSub);
+				/*
+				* nbt.bidData is the location of the dataTree for the PC
+				* nbt.bidSub is the location of the SubNodeTree for the Message Object.
+				*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
+				*/
+				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.nid, ndb, messageSubNodeTree);
+				LOG(pc.at(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
+				ltp::TableContext recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
 
 				ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
 				ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+				//ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
 				ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
 				ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+
+				for (const auto& [propID, prop] : pc)
+				{
+					//LOG("[INFO] propID [%X] propDataType [%X] DataSize [%i]", 
+						//prop.id, static_cast<uint32_t>(prop.propType), prop.data.size());
+				}
 
 				ASSERT((recip.hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((recip.hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
@@ -59,12 +68,12 @@ namespace reader
 				ASSERT((recip.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((recip.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
-				const ltp::TColDesc ltpRowIdCol = recip.findCol(types::PidTagType::LtpRowId);
-				const ltp::TColDesc ltpRowVerCol = recip.findCol(types::PidTagType::LtpRowVer);
+				const ltp::TColDesc ltpRowIdCol = recip.getCol(types::PidTagType::LtpRowId);
+				const ltp::TColDesc ltpRowVerCol = recip.getCol(types::PidTagType::LtpRowVer);
 				ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 				ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 
-				const auto m = recip.at(recip.rowIDs()[0], 1);
+				//const auto entries = recip.getRow(recip.rowIDs()[0]);
 
 
 				//ndb::DataTree* attachTableData = subnodeBTree.at(ATTACH_TC_NID);
@@ -157,8 +166,8 @@ namespace reader
 					ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
 					ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
-					const ltp::TColDesc ltpRowIdCol = hier.findCol(types::PidTagType::LtpRowId);
-					const ltp::TColDesc ltpRowVerCol = hier.findCol(types::PidTagType::LtpRowVer);
+					const ltp::TColDesc ltpRowIdCol = hier.getCol(types::PidTagType::LtpRowId);
+					const ltp::TColDesc ltpRowVerCol = hier.getCol(types::PidTagType::LtpRowVer);
 					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 				}
@@ -187,8 +196,8 @@ namespace reader
 					ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
 					ASSERT((contents.hasCol(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
 
-					const ltp::TColDesc ltpRowIdCol = hier.findCol(types::PidTagType::LtpRowId);
-					const ltp::TColDesc ltpRowVerCol = hier.findCol(types::PidTagType::LtpRowVer);
+					const ltp::TColDesc ltpRowIdCol = hier.getCol(types::PidTagType::LtpRowId);
+					const ltp::TColDesc ltpRowVerCol = hier.getCol(types::PidTagType::LtpRowVer);
 					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 				}

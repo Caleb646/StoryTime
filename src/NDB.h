@@ -9,6 +9,7 @@
 #include <map>
 #include <functional>
 #include <unordered_map>
+#include <format>
 
 #include "types.h"
 #include "utils.h"
@@ -546,7 +547,7 @@ namespace reader::ndb {
             return m_dataBlocks.front();
         }
 
-        [[nodiscard]] size_t size() const
+        [[nodiscard]] size_t nDataBlocks() const
         {
             return m_dataBlocks.size();
         }
@@ -578,6 +579,20 @@ namespace reader::ndb {
         [[nodiscard]] const DataBlock& at(size_t idx) const
         {
             return m_dataBlocks.at(idx);
+        }
+
+        std::vector<types::byte_t> combineDataBlocks() const
+        {
+            std::vector<types::byte_t> res;
+            res.reserve(nDataBlocks() * 8192);
+            for (const auto& block : m_dataBlocks)
+            {
+                for (auto byte : block.data)
+                {
+                    res.push_back(byte);
+                }
+            }
+            return res;
         }
 
         /**
@@ -837,13 +852,18 @@ namespace reader::ndb {
                 {
                     for (const SLEntry& slentry : slblock.entries)
                     {
+                        const uint32_t nidID = slentry.nid.getNIDRaw();
+                        ASSERT(!m_subtrees.contains(nidID), "[ERROR] Duplicate entry in Nested SubNodeBTree Map");
+                        ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry In DataTree Map");
                         if (slentry.bidSub.getBidRaw() != 0) // theres a nested subnode btree
                         {
                             LOG("[WARN] A nested SubNodeBTree was created");
-                            m_subtrees.emplace_back(SubNodeBTree(slentry.bidSub, m_file, m_getBBT));
+                            m_subtrees.emplace(
+                                std::piecewise_construct,
+                                std::forward_as_tuple(nidID),
+                                std::forward_as_tuple(slentry.bidSub, m_file, m_getBBT)
+                            );
                         }
-                        const uint32_t nidID = slentry.nid.getNIDRaw();
-                        ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry");
                         const auto [dataTreeBytes, dataTreeBBT] = readBlockBytes(slentry.bidData);
                         m_datatrees.emplace(
                             std::piecewise_construct,
@@ -856,15 +876,15 @@ namespace reader::ndb {
             }
         }
 
-        [[nodiscard]] DataTree* at(core::NID nid)
+        [[nodiscard]] DataTree* getDataTree(core::NID nid)
         {
             if (m_datatrees.contains(nid.getNIDRaw()))
             {
                 return &m_datatrees.at(nid.getNIDRaw());
             }
-            for (SubNodeBTree& subtree : m_subtrees)
+            for (auto& [_, subtree] : m_subtrees)
             {
-                DataTree* data = subtree.at(nid);
+                DataTree* data = subtree.getDataTree(nid);
                 if (data != nullptr)
                 {
                     return data;
@@ -874,21 +894,31 @@ namespace reader::ndb {
             return nullptr;
         }
 
-        [[nodiscard]] const DataTree* const at(core::NID nid) const
+        [[nodiscard]] const DataTree* const getDataTree(core::NID nid) const
         {
             if (m_datatrees.contains(nid.getNIDRaw()))
             {
                 return &m_datatrees.at(nid.getNIDRaw());
             }
-            for (const auto& subtree : m_subtrees)
+            for (const auto& [_, subtree] : m_subtrees)
             {
-                const auto data = subtree.at(nid);
+                const auto data = subtree.getDataTree(nid);
                 if (data != nullptr)
                 {
                     return data;
                 }
             }
             LOG("[WARN] Failed to find DataBlock in SubNode Tree");
+            return nullptr;
+        }
+
+        [[nodiscard]] const SubNodeBTree* const getNestedSubNodeTree(core::NID nid) const
+        {
+            if (m_subtrees.contains(nid.getNIDRaw()))
+            {
+                return &m_subtrees.at(nid.getNIDRaw());
+            }
+            LOG("[WARN] Failed to find matching subnode btree");
             return nullptr;
         }
 
@@ -900,14 +930,14 @@ namespace reader::ndb {
             return { utils::readBytes(m_file.get(), totalBlockSize), bbt };
         }
 
-        size_t calcBlockAlignedSize(size_t dataSize)
+        /**
+         * @brief 
+         * @param dataSize is the size of btype + clevel + cEnt + dwpadding + plus cEnt * Entry Size  
+        */
+        static size_t calcBlockAlignedSize(size_t dataSize)
         {
-            const size_t sBType = 1;
-            const size_t sCLevel = 1;
-            const size_t sCEnt = 2;
-            const size_t sDwPadding = 4;
             const size_t blockTrailerSize = 16;
-            const size_t totalBlockSizeWithoutPadding = dataSize + blockTrailerSize + sBType + sCLevel + sCEnt + sDwPadding;
+            const size_t totalBlockSizeWithoutPadding = dataSize + blockTrailerSize; // +sBType + sCLevel + sCEnt + sDwPadding;
 
             const size_t multiple = 64;
             const size_t remainder = totalBlockSizeWithoutPadding % multiple;
@@ -921,9 +951,25 @@ namespace reader::ndb {
         core::Ref<std::ifstream> m_file;
         GetBBT_t m_getBBT;
         std::vector<SLBlock> m_slblocks;
-        std::vector<SubNodeBTree> m_subtrees;
+        // uint32_t is a Raw NID
+        std::unordered_map<uint32_t, SubNodeBTree> m_subtrees;
         // uint32_t is a Raw NID
         std::unordered_map<uint32_t, DataTree> m_datatrees;
+    };
+
+    class SubNodeTreeContainer
+    {
+    public:
+        SubNodeTreeContainer(core::BID bid, core::Ref<std::ifstream> file, const SubNodeBTree::GetBBT_t& getBBT)
+            : m_bid(bid), m_file(file), m_getBBT(getBBT)
+        {
+
+        }
+    private:
+        std::unordered_map<uint32_t, SubNodeBTree> m_subtrees;
+        core::Ref<std::ifstream> m_file;
+        core::BID m_bid;
+        SubNodeBTree::GetBBT_t m_getBBT;
     };
 
     template<typename LeafEntryType>
@@ -1225,6 +1271,7 @@ namespace reader::ndb {
                 }
                 idxProcessing++;
             }
+            LOG("hehll");
             LOG("[INFO] %s has %i subpages", 
                 utils::PTypeToString(rootPagePType).c_str(), btree.size());
         }
