@@ -262,6 +262,13 @@ namespace reader::ndb {
             return { bytes, PageTrailer(view.takeLast(16), bref), parentCLevel };
         }
 
+        static BTPage Init(const std::vector<types::byte_t>& bytes, int32_t parentCLevel = -1)
+        {
+            ASSERT((bytes.size() == BTPage::size), "[ERROR]");
+            utils::ByteView view(bytes);
+            return { bytes, PageTrailer(view.takeLast(16)), parentCLevel };
+        }
+
         BTPage(const std::vector<types::byte_t>& bytes, PageTrailer&& trailer_, int32_t parentCLevel = -1)
             : trailer(trailer_)
         {

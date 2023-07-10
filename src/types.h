@@ -10,8 +10,8 @@
 
 namespace reader::types {
 
-    typedef unsigned char byte_t;
-    typedef uint16_t utf16le_t;
+    using byte_t = unsigned char;
+    using utf16le_t = uint16_t;
 
     enum class PType : uint32_t
     {
@@ -208,6 +208,8 @@ namespace reader::types {
 
         Unknown = 0xFFFFFFF
     };
+
+    bool operator==(const PidTagType a, const uint32_t b) { return static_cast<uint32_t>(a) == b; }
 
     /**
         * @brief A Pid Tag & Type is a unique combination whereas just a Pid Tag is NOT

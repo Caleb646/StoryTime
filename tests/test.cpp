@@ -5,6 +5,8 @@
 #include <cassert>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "types.h"
 #include "utils.h"
 #include "core.h"
@@ -20,7 +22,7 @@ using namespace reader::core;
 // BT page (cLevel=1), with 3 BTENTRY items (cEnt=3), 
 // each of size 0x18 bytes (cbEnt=0x18), and 
 // the maximum capacity of the page is 0x14 BTENTRY structures (cEntMax=0x14)
-std::vector<types::byte_t> sample_btpage = {
+const std::vector<types::byte_t> sample_btpage = {
    0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
    0x00, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
    0x41, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -57,7 +59,7 @@ std::vector<types::byte_t> sample_btpage = {
    0x81, 0x81, 0x06, 0x80, 0x64, 0xB1, 0xE8, 0x02, 0x06, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Page trailer
 };
 
-std::vector<types::byte_t> sample_nbtentryPage = {
+const std::vector<types::byte_t> sample_nbtentryPage = {
 
   0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// nid = 1
   0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// bidData = 2
@@ -116,7 +118,7 @@ std::vector<types::byte_t> sample_nbtentryPage = {
   0x81, 0x81, 0x6B, 0x70, 0x49, 0x19, 0xC2, 0x39, 0x6B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Page Trailer
 };
 
-std::vector<types::byte_t> sample_bbtentryPage = {
+const std::vector<types::byte_t> sample_bbtentryPage = {
  0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Bref
  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
  
@@ -161,7 +163,7 @@ std::vector<types::byte_t> sample_bbtentryPage = {
  0x80, 0x80, 0xD6, 0x00, 0x2F, 0xA0, 0xF6, 0xA1, 0x46, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Page Trailer
 };
 
-std::vector<types::byte_t> sample_HN = {
+const std::vector<types::byte_t> sample_HN = {
 	0xEC, 0x00, 0xEC, 0xBC, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB5, 0x02, 0x06, 0x00,
 	0x40, 0x00, 0x00, 0x00, 0x34, 0x0E, 0x02, 0x01, 0xA0, 0x00, 0x00, 0x00, 0x38, 0x0E, 0x03, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0xF9, 0x0F, 0x02, 0x01, 0x60, 0x00, 0x00, 0x00, 0x01, 0x30, 0x1F, 0x00,
@@ -181,83 +183,96 @@ std::vector<types::byte_t> sample_HN = {
 	0xEC, 0x00
 };
 
-int main()
-{   
-	BTPage btpage = BTPage::readBTPage(sample_btpage, types::PType::NBT);
-	ASSERT((btpage.cLevel == 1), "[ERROR]");
-	ASSERT((btpage.rgentries.size() == 3), "[ERROR]");
-	ASSERT((btpage.cbEnt == 0x18), "[ERROR]");
-	ASSERT((btpage.cEntMax == 0x14), "[ERROR]");
-	ASSERT((btpage.hasBTEntries() == true), "[ERROR]");
 
-	BTPage nbtpage = BTPage::readBTPage(sample_nbtentryPage, types::PType::NBT);
-	ASSERT((nbtpage.cLevel == 0), "[ERROR]");
-	ASSERT((nbtpage.rgentries.size() == 0x05), "[ERROR]");
-	ASSERT((nbtpage.cEnt == 0x05), "[ERROR]");
-	ASSERT((nbtpage.cbEnt == 0x20), "[ERROR]");
-	ASSERT((nbtpage.cEntMax == 0x0F), "[ERROR]");
-	ASSERT((nbtpage.hasNBTEntries() == true), "[ERROR]");
+TEST(BTPageTest, BTPageTestInit)
+{
+	const BTPage btpage = BTPage::Init(sample_btpage);
+	ASSERT_EQ(btpage.cLevel, 1);
+	ASSERT_EQ(btpage.rgentries.size(), 3);
+	ASSERT_EQ(btpage.singleEntrySize, 0x18);
+	ASSERT_EQ(btpage.maxNEntries, 0x14);
+	ASSERT_EQ(btpage.hasBTEntries(), true);
+
+	const BTPage nbtpage = BTPage::Init(sample_nbtentryPage);
+	ASSERT_EQ(nbtpage.cLevel, 0);
+	ASSERT_EQ(nbtpage.rgentries.size(), 0x05);
+	ASSERT_EQ(nbtpage.nEntries, 0x05);
+	ASSERT_EQ(nbtpage.singleEntrySize, 0x20);
+	ASSERT_EQ(nbtpage.maxNEntries, 0x0F);
+	ASSERT_EQ(nbtpage.hasNBTEntries(), true);
 
 	uint32_t odd = 1;
 	uint32_t even = 2;
-	for (uint32_t i = 0; i < nbtpage.rgentries.size(); i++)
+	for (const auto& entry : nbtpage.rgentries)
 	{
-		const NBTEntry& nbt = nbtpage.rgentries.at(i).asNBTEntry();
-		ASSERT((nbt.nid == NID(odd)), "[ERROR]");
-		ASSERT((nbt.bidData == BID(even)), "[ERROR]");
-		ASSERT((nbt.bidSub == BID(0)), "[ERROR]");
-		ASSERT((nbt.nidParent == NID(0)), "[ERROR]");
+		const NBTEntry& nbt = entry.asNBTEntry();
+		ASSERT_EQ(nbt.nid, NID(odd));
+		ASSERT_EQ(nbt.bidData, BID(even));
+		ASSERT_EQ(nbt.bidSub, BID(0));
+		ASSERT_EQ(nbt.nidParent, NID(0));
 		odd += 2;
 		even += 2;
 	}
 
-	BTPage bbtpage = BTPage::readBTPage(sample_bbtentryPage, types::PType::BBT);
-	ASSERT((bbtpage.cLevel == 0), "[ERROR]");
-	ASSERT((bbtpage.rgentries.size() == 5), "[ERROR]");
-	ASSERT((bbtpage.cEnt == 5), "[ERROR]");
-	ASSERT((bbtpage.cbEnt == 0x18), "[ERROR]");
-	ASSERT((bbtpage.cEntMax == 0x14), "[ERROR]");
-	ASSERT((bbtpage.hasBBTEntries() == true), "[ERROR]");
+	BTPage bbtpage = BTPage::Init(sample_bbtentryPage);
+	ASSERT_EQ(bbtpage.cLevel, 0);
+	ASSERT_EQ(bbtpage.rgentries.size(), 5);
+	ASSERT_EQ(bbtpage.nEntries, 5);
+	ASSERT_EQ(bbtpage.singleEntrySize, 0x18);
+	ASSERT_EQ(bbtpage.maxNEntries, 0x14);
+	ASSERT_EQ(bbtpage.hasBBTEntries(), true);
 
 	even = 2;
-	for (uint32_t i = 0; i < bbtpage.rgentries.size(); i++)
+	for (const auto& entry : bbtpage.rgentries)
 	{
-		const BBTEntry& bbt = bbtpage.rgentries.at(i).asBBTEntry();
-		ASSERT((bbt.bref.bid == BID(even)), "[ERROR]");
+		const BBTEntry& bbt = entry.asBBTEntry();
+		ASSERT_EQ(bbt.bref.bid, BID(even));
 		even += 2;
 	}
 
-	BTree<NBTEntry> nodes(nbtpage);
-	BTree<BBTEntry> blocks(bbtpage);
+	const BTree<NBTEntry> nodes(nbtpage);
+	const BTree<BBTEntry> blocks(bbtpage);
 
 	for (const BTPage& page : nodes)
 	{
 		odd = 1;
 		even = 2;
-		for ( [[maybe_unused]] const Entry& e : page.rgentries)
+		for ([[maybe_unused]] const Entry& e : page.rgentries)
 		{
 			const NBTEntry& nbt = nodes.get(NID(odd));
 			const BBTEntry& bbt = blocks.get(nbt.bidData);
-			ASSERT((nbt.nid == NID(odd)), "[ERROR]");
-			ASSERT((nbt.bidData == BID(even)), "[ERROR]");
-			ASSERT((bbt.bref.bid == BID(even)), "[ERROR]");
+			ASSERT_EQ(nbt.nid, NID(odd));
+			ASSERT_EQ(nbt.bidData, BID(even));
+			ASSERT_EQ(bbt.bref.bid, BID(even));
 			odd += 2;
 			even += 2;
 		}
 	}
+}
 
-	HNHDR hnhdr = HN::readHNHDR(sample_HN, 0, 1);
-	ASSERT((hnhdr.bSig == 0xEC), "[ERROR]");
-	ASSERT((hnhdr.bClientSig == 0xBC), "[ERROR]");
-	ASSERT((hnhdr.hidUserRoot.getHIDRaw() == 0x00000020), "[ERROR]");
-	ASSERT((hnhdr.ibHnpm == 0x00EC), "[ERROR]");
+TEST(HNTests, HNHDRTest)
+{
+	const HNHDR hnhdr = HN::readHNHDR(sample_HN, 0, 1);
+	ASSERT_EQ(hnhdr.bSig, 0xEC);
+	ASSERT_EQ(hnhdr.bClientSig, 0xBC);
+	ASSERT_EQ(hnhdr.hidUserRoot.getHIDRaw(), 0x00000020);
+	ASSERT_EQ(hnhdr.ibHnpm, 0x00EC);
+}
 
+TEST(UtilTests, EncodingDecodingTest)
+{
 	std::vector<types::byte_t> A(sample_HN);
-	std::vector<types::byte_t> B(sample_HN);
+	const std::vector<types::byte_t> B(sample_HN);
+	ASSERT_EQ(A, B);
 	utils::ms::CryptPermute(A.data(), static_cast<int>(A.size()), utils::ms::ENCODE_DATA);
-	ASSERT((A != B), "[ERROR]");
+	ASSERT_NE(A, B);
 	utils::ms::CryptPermute(A.data(), static_cast<int>(A.size()), utils::ms::DECODE_DATA);
-	ASSERT((A == B), "[ERROR]");
+	ASSERT_EQ(A, B);
+}
 
-	return 0;
+
+int main(int argc, char** argv)
+{   
+	::testing::InitGoogleTest(&argc, argv);
+	return RUN_ALL_TESTS();
 }
