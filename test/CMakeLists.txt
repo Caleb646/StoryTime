@@ -16,7 +16,8 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(pst_reader_tests "test.cpp")
+add_executable(pst_reader_tests "test_main.cpp")
+#add_executable(pst_reader_tests "test_main.cpp" "core_tests.cpp" "ltp_tests.cpp")
 target_include_directories(pst_reader_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(pst_reader_tests PRIVATE GTest::gtest_main)
 

@@ -270,7 +270,7 @@ namespace reader::ndb {
         }
 
         BTPage(const std::vector<types::byte_t>& bytes, PageTrailer&& trailer_, int32_t parentCLevel = -1)
-            : trailer(trailer_)
+            : trailer(std::move(trailer_))
         {
             utils::ByteView view(bytes);
             view.skip(488); // skip entries for now
@@ -295,7 +295,6 @@ namespace reader::ndb {
         }
 
     public:
-
         [[nodiscard]] size_t getEntryType() const
         {
             return getEntryType(trailer.ptype, cLevel);
@@ -416,7 +415,7 @@ namespace reader::ndb {
             std::vector<types::byte_t> data = view.read(trailer.cb);
             ASSERT((data.size() == trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
 
-            size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
+            const size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
             ASSERT((trailer.dwCRC == dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
             // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
             utils::ms::CryptPermute(
@@ -588,7 +587,7 @@ namespace reader::ndb {
             return m_dataBlocks.at(idx);
         }
 
-        std::vector<types::byte_t> combineDataBlocks() const
+        [[nodiscard]] std::vector<types::byte_t> combineDataBlocks() const
         {
             std::vector<types::byte_t> res;
             res.reserve(nDataBlocks() * 8192);

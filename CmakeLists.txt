@@ -9,7 +9,7 @@ set (SRC_FILES "src/main.cpp")
 include(CTest)
 
 #if(BUILD_TESTING)
-  add_subdirectory(tests)
+  add_subdirectory(test)
 #endif()
 
 set(MSVC_WARNINGS

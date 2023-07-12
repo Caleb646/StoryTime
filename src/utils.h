@@ -235,7 +235,7 @@ namespace reader::utils {
     template<typename T>
     std::string NIDTypeToString(T t)
     {
-        switch ((int64_t)t)
+        switch (static_cast<uint32_t>(t))
         {
         case 0x00:
             return "NID_TYPE_HID";
@@ -535,12 +535,15 @@ namespace reader::utils {
         }
     }
 
-    std::vector<types::byte_t> pad(const std::vector<types::byte_t>& bytes, int64_t bytesToAdd)
+    std::vector<types::byte_t> pad(const std::vector<types::byte_t>& bytes, size_t bytesToAdd)
     {
         std::vector<types::byte_t> result = bytes;
-        if (bytesToAdd <= 0) return result;
+        if (bytesToAdd <= 0)
+        {
+            return result;
+        }
 
-        for (int64_t i = 0; i < bytesToAdd; i++)
+        for (size_t i = 0; i < bytesToAdd; ++i)
         {
             result.push_back('\0');
         }
@@ -554,24 +557,21 @@ namespace reader::utils {
         ASSERT((sizeof(T) == bytes.size()), "[ERROR] toT_l T not [%i].", sizeof(T));
         if constexpr (sizeof(T) == 1)
         {
-            //static_assert(sizeof(T) == 1);
             return static_cast<T>
                 (
                     static_cast<T>(bytes[0])
-                    );
+                );
         }
         else if constexpr (sizeof(T) == 2)
         {
-            //static_assert(sizeof(T) == 2);
             return static_cast<T>
                 (
                     static_cast<T>(bytes[1]) << 8 |
                     static_cast<T>(bytes[0])
-                    );
+                );
         }
         else if constexpr (sizeof(T) == 3)
         {
-            //static_assert(sizeof(T) == 3);
             return static_cast<T>
                 (
                     static_cast<T>(bytes[2]) << 16 |
@@ -581,7 +581,6 @@ namespace reader::utils {
         }
         else if constexpr (sizeof(T) == 4)
         {
-            //static_assert(sizeof(T) == 4);
             return static_cast<T>
                 (
                     static_cast<T>(bytes[3]) << 24 |
@@ -623,26 +622,6 @@ namespace reader::utils {
         return found;
     }
 
-    //template<typename T>
-    std::vector<types::byte_t> toBits(int32_t integer, int64_t nbits)
-	{
-        ASSERT( (nbits > 0 && nbits <= 8 && nbits % 2 == 0), "[ERROR] nbits has to be between 1 and 8 and a multiple of 2");
-        int64_t nElements = sizeof(integer) * (8 / nbits);
-        int64_t mask = (int64_t)0xFF >> ((int64_t)8 - nbits);
-		std::vector<types::byte_t> bytes(nElements);
-		for (int64_t i = 0; i < nElements; i++)
-		{
-            // mask out the desired bits
-            int64_t masked = integer & (mask << (i * nbits));
-            // once masked, shift the bits to the right so they are in the first 8 bits
-            int64_t shifted = masked >> (i * nbits);
-            // if masked and shifted correctly, anding with the mask should be equal to shifted
-            ASSERT(( (shifted & mask) == shifted), "[ERROR] shifted & mask != mask");
-			bytes[i] = static_cast<types::byte_t>(shifted);
-		}
-		return bytes;
-	}
-
     template<typename T>
     std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)
     {
@@ -654,27 +633,6 @@ namespace reader::utils {
     T slice(const std::vector<types::byte_t>& v, I start, I end, I size, T(*convert)(const std::vector<types::byte_t>&))
     {
         return convert(slice(v, start, end, size));
-    }
-
-    /**
-        * @brief = Zero-indexed slice of bits from a byte vector
-        * @param start = The inclusive start index in bits
-        * @param end = The exclusive end index in bits
-        * @param size = The size of the slice in bits
-    */
-    template<typename T, typename I>
-    T sliceBits(const std::vector<types::byte_t>& bytes, I start, I end, I size)
-    {
-        ASSERT((end - start == size), "[ERROR] Invalid slice size [%i] != [%i]", end - start, size);
-        ASSERT((size < 64), "[ERROR] Size must be less than 64 bits [%i]", size);
-        int64_t k = toT_l<int64_t>(bytes);
-        return static_cast<T>((k >> start) & ((1 << size) - 1));
-    }
-
-    template<typename R, typename T, typename I>
-    R sliceBits(T integer, I start, I end, I size)
-    {
-        return sliceBits<R>(toBits(integer, 8), start, end, size);
     }
 
     template<typename T>
@@ -691,7 +649,7 @@ namespace reader::utils {
     template<class T>
     T readBytes(
         std::ifstream& file, 
-        std::uint32_t numBytes, 
+        size_t numBytes, 
         T(*convert)(const std::vector<types::byte_t>&))
     {
         return convert(readBytes(file, numBytes));
@@ -701,9 +659,9 @@ namespace reader::utils {
     class ByteView
     {
     public:
-        ByteView(const std::vector<types::byte_t>& bytes)
+        explicit ByteView(const std::vector<types::byte_t>& bytes)
             : m_bytes(bytes) {}
-        ByteView(const std::vector<types::byte_t>& bytes, size_t start)
+        explicit ByteView(const std::vector<types::byte_t>& bytes, size_t start)
             : m_bytes(bytes), m_start(start) {}
         ByteView(const ByteView&) = delete;
         ByteView(ByteView&&) = delete;
