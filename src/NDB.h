@@ -524,15 +524,6 @@ namespace reader::ndb {
         }
     };
 
-    //struct Block 
-    //{
-    //    types::BlockType blockType{types::BlockType::INVALID};
-    //    std::vector<types::byte_t> data;
-    //    BlockTrailer trailer;
-    //};
-
-  
-
     class DataTree
     {
     public:
@@ -540,7 +531,7 @@ namespace reader::ndb {
 
     public:
         DataTree(core::Ref<std::ifstream> file, const GetBBT_t& getBBT, core::BREF bref, size_t sizeOfBlockData)
-            : m_file(file), m_bref(bref), m_getBBT(getBBT), m_sizeofFirstBlockData(sizeOfBlockData)
+            : m_file(file), m_firstBlockBREF(bref), m_getBBT(getBBT), m_sizeofFirstBlockData(sizeOfBlockData)
         {
             static_assert(std::is_move_constructible_v<DataTree>, "DataTree must be move constructible");
             static_assert(std::is_move_assignable_v<DataTree>, "DataTree must be move assignable");
@@ -548,38 +539,14 @@ namespace reader::ndb {
             static_assert(std::is_copy_assignable_v<DataTree>, "DataTree must be copy assignable");
         }
 
-        [[nodiscard]] const DataBlock& first() const
-        {
-            return m_dataBlocks.front();
-        }
-
         [[nodiscard]] size_t nDataBlocks() const
         {
             return m_dataBlocks.size();
         }
 
-        [[nodiscard]] size_t size(size_t dataBlockIdx) const
+        [[nodiscard]] size_t sizeOfDataBlockData(size_t dataBlockIdx) const
         {
             return m_dataBlocks.at(dataBlockIdx).data.size();
-        }
-
-        [[nodiscard]] bool isValid() const
-		{
-            return !m_dataBlocks.empty();
-		}
-
-        const std::vector<DataBlock>& blocks()
-        {
-            init(); // does nothing if m_dataBlocks is NOT empty
-            return m_dataBlocks;
-        }
-
-        void init()
-        {
-            if (m_dataBlocks.empty())
-            {
-                _init();
-            }
         }
 
         [[nodiscard]] const DataBlock& at(size_t idx) const
@@ -599,6 +566,62 @@ namespace reader::ndb {
                 }
             }
             return res;
+        }
+
+        auto begin()
+        {
+            if (m_dataBlocks.empty())
+            {
+                load();
+            }
+            return m_dataBlocks.begin();
+        }
+        auto end()
+        {
+            return m_dataBlocks.end();
+        }
+
+        void load()
+        {
+            const auto [blockSize, offset] = calcBlockAlignedSize(m_sizeofFirstBlockData);
+            const size_t blockTrailerSize = 16;
+
+            std::vector<types::byte_t> blockBytes = readBlockBytes(m_firstBlockBREF.ib, blockSize);
+            utils::ByteView view(blockBytes);
+            BlockTrailer trailer(view.takeLast(16), m_firstBlockBREF);
+
+            ASSERT((trailer.bid == m_firstBlockBREF.bid), "[ERROR] Bids should match");
+            ASSERT((blockSize - (blockTrailerSize + offset) == trailer.cb),
+                "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
+            ASSERT((m_sizeofFirstBlockData == trailer.cb),
+                "[ERROR] Given sizeofBlockData [%i] != Trailer BlockSize [%i]", m_sizeofFirstBlockData, trailer.cb);
+
+            if (!trailer.bid.isInternal()) // Data Block
+            {
+                m_dataBlocks.push_back(DataBlock::Init(blockBytes, m_firstBlockBREF)); // If the first block is a data block then we are done.
+            }
+            else if (trailer.bid.isInternal()) // the block internal
+            {
+                const auto btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<uint32_t>);
+                if (btype == 0x01) // XBlock
+                {
+                    xBlocktoDataBlocks(XBlock::Init(blockBytes, m_firstBlockBREF));
+                }
+
+                else if (btype == 0x02) // XXBlock
+                {
+                    xxBlocktoDataBlocks(XXBlock::Init(blockBytes, m_firstBlockBREF));
+                }
+                else
+                {
+                    ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
+                }
+                flush(); // only flush when there is an X or XX Block
+            }
+            else // Invalid Block Type
+            {
+                ASSERT(false, "[ERROR] Unknown block type");
+            }
         }
 
         /**
@@ -622,52 +645,10 @@ namespace reader::ndb {
 
     private:
 
-        std::vector<types::byte_t> readBlockBytes(core::BREF bref, uint64_t blockTotalSize)
+        std::vector<types::byte_t> readBlockBytes(uint64_t position, uint64_t blockTotalSize)
         {
-            m_file->seekg(bref.ib, std::ios::beg);
+            m_file->seekg(position, std::ios::beg);
             return utils::readBytes(m_file.get(), blockTotalSize);
-        }
-
-        void _init()
-        {
-            const auto [blockSize, offset] = calcBlockAlignedSize(m_sizeofFirstBlockData);
-            const size_t blockTrailerSize = 16;
-
-            std::vector<types::byte_t> blockBytes = readBlockBytes(m_bref, blockSize);
-            utils::ByteView view(blockBytes);
-            BlockTrailer trailer(view.takeLast(16), m_bref);
-
-            ASSERT((trailer.bid == m_bref.bid), "[ERROR] Bids should match");
-            ASSERT((blockSize - (blockTrailerSize + offset) == trailer.cb),
-                "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
-            ASSERT((m_sizeofFirstBlockData == trailer.cb),
-                "[ERROR] Given sizeofBlockData [%i] != Trailer BlockSize [%i]", m_sizeofFirstBlockData, trailer.cb);
-
-            if (!trailer.bid.isInternal()) // Data Block
-            {
-                m_dataBlocks.push_back(DataBlock::Init(blockBytes, m_bref)); // If the first block is a data block then we are done.
-            }
-            else if (trailer.bid.isInternal()) // the block internal
-            {
-                const auto btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<uint32_t>);
-                if (btype == 0x01) // XBlock
-                {
-                    xBlocktoDataBlocks(XBlock::Init(blockBytes, m_bref));
-                }
-
-                else if (btype == 0x02) // XXBlock
-                {
-                    xxBlocktoDataBlocks(XXBlock::Init(blockBytes, m_bref));
-                }
-                else
-                {
-                    ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
-                }
-            }
-            else // Invalid Block Type
-            {
-                ASSERT(false, "[ERROR] Unknown block type");
-            }  
         }
 
         void xBlocktoDataBlocks(const XBlock& xblock)
@@ -675,9 +656,7 @@ namespace reader::ndb {
             for (const core::BID& bid : xblock.rgbid)
             {
                 const BBTEntry bbt = m_getBBT(bid);
-                const auto [blockSize, offset] = calcBlockAlignedSize(bbt.cb);
-                const std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref, blockSize);
-                m_dataBlocks.push_back(DataBlock::Init(bytes, bbt.bref));
+                m_dataBlockBBTs.push_back(bbt);
             }
         }
 
@@ -687,16 +666,48 @@ namespace reader::ndb {
             {
                 const BBTEntry bbt = m_getBBT(bid);
                 const auto [blockSize, offset] = calcBlockAlignedSize(bbt.cb);
-                const std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref, blockSize);
+                const std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref.ib, blockSize);
                 xBlocktoDataBlocks(XBlock::Init(bytes, bbt.bref));
+            }
+        }
+
+        void flush()
+        {
+            if (m_dataBlockBBTs.empty())
+            {
+                LOG("[WARN] Flush was called with 0 data block BBTs");
+                return;
+            }
+            for (size_t i = 1; i < m_dataBlockBBTs.size(); ++i)
+            {
+                const uint64_t start = m_dataBlockBBTs.at(i - 1).bref.ib;
+                const uint64_t end = m_dataBlockBBTs.at(i).bref.ib;
+                auto [expectedSize, offset] = calcBlockAlignedSize(m_dataBlockBBTs.at(i - 1).cb);
+                ASSERT((start < end), "[ERROR]");
+                ASSERT((end - start == expectedSize), "[ERROR]");
+            }
+            size_t nBytes{ 0 };
+            for (const auto& entry : m_dataBlockBBTs)
+            {
+                auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
+                nBytes += totalSize;
+            }
+            std::vector<types::byte_t> allBlocksBytes = readBlockBytes(m_dataBlockBBTs.at(0).bref.ib, nBytes);
+            utils::ByteView view(allBlocksBytes);
+            m_dataBlocks.reserve(m_dataBlockBBTs.size());
+            for (const auto& entry : m_dataBlockBBTs)
+            {
+                auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
+                m_dataBlocks.push_back(DataBlock::Init(view.read(totalSize), entry.bref));
             }
         }
 
     private:
         core::Ref<std::ifstream> m_file;
-        core::BREF m_bref;
+        core::BREF m_firstBlockBREF;
         GetBBT_t m_getBBT;
         size_t m_sizeofFirstBlockData{ 0 };
+        std::vector<BBTEntry> m_dataBlockBBTs{};
         std::vector<DataBlock> m_dataBlocks{};
     };
     /**
@@ -876,7 +887,6 @@ namespace reader::ndb {
                             std::forward_as_tuple(nidID),
                             std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.bref, dataTreeBBT.cb)
                         );
-                        m_datatrees.at(nidID).init();
                     }
                 }
             }
@@ -915,6 +925,16 @@ namespace reader::ndb {
                 }
             }
             LOG("[WARN] Failed to find DataBlock in SubNode Tree");
+            return nullptr;
+        }
+
+        [[nodiscard]] SubNodeBTree* getNestedSubNodeTree(core::NID nid)
+        {
+            if (m_subtrees.contains(nid.getNIDRaw()))
+            {
+                return &m_subtrees.at(nid.getNIDRaw());
+            }
+            LOG("[WARN] Failed to find matching subnode btree");
             return nullptr;
         }
 

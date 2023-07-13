@@ -86,6 +86,12 @@ namespace reader
 					std::move(recip)
 				);
 			}
+
+			void load()
+			{
+
+			}
+
 		private:
 			MessageObject(
 				core::NID nid, 

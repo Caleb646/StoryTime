@@ -614,9 +614,9 @@ namespace reader {
 				return HN(nid, ndb->InitDataTree(bbt.bref, bbt.cb));
 			}
 
-			static HN Init(core::NID nid, const ndb::DataTree& dtree)
+			static HN Init(core::NID nid, ndb::DataTree&& dtree)
 			{
-				return HN(nid, dtree);
+				return HN(nid, std::move(dtree));
 			}
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
@@ -742,28 +742,31 @@ namespace reader {
 			}
 
 			private:
-				HN(core::NID nid, const ndb::DataTree& dTree)
-					: m_nid(nid), m_dataTree(dTree)
+				HN(core::NID nid, ndb::DataTree&& dTree)
+					: m_nid(nid), m_dataTree(std::move(dTree))
 				{
 					static_assert(std::is_move_constructible_v<HN>, "HN must be move constructible");
 					static_assert(std::is_move_assignable_v<HN>, "HN must be move assignable");
 					static_assert(std::is_copy_constructible_v<HN>, "HN must be copy constructible");
 					static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
 
-					// The first call to blocks fetches all of them
-					const std::vector<ndb::DataBlock>& dBlocks = m_dataTree.blocks();
-					const ndb::DataBlock firstDBlock = dBlocks.at(0);
-
-					m_hnhdr = readHNHDR(firstDBlock.data, 0, dBlocks.size());
-
-					HNBlock block{};
-					block.map = readHNPageMap(firstDBlock.data, m_hnhdr.ibHnpm);
-					block.data = firstDBlock.data;
-					m_blocks.push_back(block);
-
-					for (size_t i = 1; i < dBlocks.size(); i++)
+					size_t idx = 0;
+					
+					for (ndb::DataBlock& dataBlock : m_dataTree)
 					{
-						addBlock(dBlocks.at(i).data, i);
+						if (idx == 0)
+						{
+							m_hnhdr = readHNHDR(dataBlock.data, 0, m_dataTree.nDataBlocks());
+							HNBlock block{};
+							block.map = readHNPageMap(dataBlock.data, m_hnhdr.ibHnpm);
+							block.data = std::move(dataBlock.data);
+							m_blocks.push_back(block);
+						}
+						else
+						{
+							addBlock(dataBlock.data, idx);
+						}
+						++idx;
 					}
 				}
 
@@ -778,13 +781,24 @@ namespace reader {
 		{
 		public:
 			//BTreeHeap() = default;
-			BTreeHeap(core::Ref<const HN> hn, HID bthHeaderHID) : m_hn(hn) 
+			BTreeHeap(const HN& hn, HID bthHeaderHID)
 			{ 
 				static_assert(std::is_move_constructible_v<BTreeHeap>, "BTreeHeap must be move constructible");
 				static_assert(std::is_move_assignable_v<BTreeHeap>, "BTreeHeap must be move assignable");
 				static_assert(std::is_copy_constructible_v<BTreeHeap>, "BTreeHeap must be copy constructible");
 				static_assert(std::is_copy_assignable_v<BTreeHeap>, "BTreeHeap must be copy assignable");
-				_init(bthHeaderHID);
+				std::vector<types::byte_t> headerBytes = hn.getAllocation(bthHeaderHID);
+				m_header = readBTHHeader(headerBytes);
+
+				if (m_header.hidRoot.getHIDRaw() > 0) // If hidRoot is zero, the BTH is empty
+				{
+					m_records = readBTHRecords(
+						hn.getAllocation(m_header.hidRoot),
+						m_header.cbKey,
+						m_header.bIdxLevels,
+						m_header.cbEnt
+					);
+				}
 			}
 
 			static BTHHeader readBTHHeader(const std::vector<types::byte_t>& bytes)
@@ -823,19 +837,6 @@ namespace reader {
 
 				utils::ByteView view(bytes);
 				std::vector<Record> records = view.entries<Record>(nRecords, rsize, keySize, dataSize);
-				/*records.reserve(nRecords);
-				for (size_t i = 0; i < nRecords; i++)
-				{
-					size_t start = i * rsize;
-					size_t end = start + rsize;
-					ASSERT((end - start == rsize), "[ERROR] Invalid size");
-					records.push_back(Record(
-							utils::slice(bytes, start, end, rsize),
-							keySize,
-							dataSize
-						)
-					);
-				}*/
 				ASSERT((records.size() == nRecords), "[ERROR] Invalid size");
 				return records;
 			}
@@ -868,26 +869,7 @@ namespace reader {
 			{
 				return m_records;
 			}
-
 		private:
-			void _init(HID bthHeaderHID)
-			{
-				std::vector<types::byte_t> headerBytes = m_hn->getAllocation(bthHeaderHID);
-				m_header = readBTHHeader(headerBytes);
-
-				if (m_header.hidRoot.getHIDRaw() > 0) // If hidRoot is zero, the BTH is empty
-				{
-					m_records = readBTHRecords(
-						m_hn->getAllocation(m_header.hidRoot),
-						m_header.cbKey,
-						m_header.bIdxLevels,
-						m_header.cbEnt
-					);
-				}
-
-			}
-		private:
-			core::Ref<const HN> m_hn;
 			BTHHeader m_header;
 			std::vector<Record> m_records;
 		};
@@ -1139,13 +1121,16 @@ namespace reader {
 			}
 	
 		private:
-
 			PropertyContext(
 				core::NID nid, 
 				core::Ref<const ndb::NDB> ndb, HN&& hn, 
 				const ndb::SubNodeBTree& subTree
 			)
-				: m_nid(nid), m_ndb(ndb), m_hn(hn), m_bth(core::Ref<const HN>(m_hn), m_hn.getHeader().hidUserRoot),
+				: 
+				m_nid(nid), 
+				m_ndb(ndb), 
+				m_hn(hn), 
+				m_bth(m_hn, m_hn.getHeader().hidUserRoot),
 				m_subtree(subTree)
 			{
 				_init();
@@ -1225,7 +1210,7 @@ namespace reader {
 
 			static TableContext Init(
 				core::NID dataTreeNID,
-				const ndb::SubNodeBTree& parentSubNodeTree
+				ndb::SubNodeBTree& parentSubNodeTree
 			)
 			{
 				/*
@@ -1234,18 +1219,17 @@ namespace reader {
 				* Whereas the SubNodeBTree for the TC, if present, will be a Nested SubNodeBTree inside the Parent SubNodeBtree.
 				* The id for the Nested SubNodeBTree is the same id for the DataTree.
 				*/
-				const ndb::DataTree* const dataTree = parentSubNodeTree.getDataTree(dataTreeNID);
-				const ndb::SubNodeBTree* const nestedSubNodeTree = parentSubNodeTree.getNestedSubNodeTree(dataTreeNID);
+				ndb::DataTree* dataTree = parentSubNodeTree.getDataTree(dataTreeNID);
+				ndb::SubNodeBTree* nestedSubNodeTree = parentSubNodeTree.getNestedSubNodeTree(dataTreeNID);
 				ASSERT((dataTree != nullptr), "[ERROR]");
 				LOGIF((nestedSubNodeTree == nullptr), "[ERROR] Nested SubNodeBTree was not found");
-				return TableContext(HN::Init(dataTreeNID, *dataTree), *nestedSubNodeTree);
+				return TableContext(HN::Init(dataTreeNID, std::move(*dataTree)), std::move(*nestedSubNodeTree));
 			}
 
 			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{			
 				const ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::SubNodeBTree subtree = ndb->InitSubNodeBTree(nbt.bidSub);
-				return TableContext(HN::Init(nid, ndb), subtree);
+				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.bidSub));
 			}
 
 			[[nodiscard]] std::vector<TCRowID> rowIDs() const
@@ -1326,93 +1310,18 @@ namespace reader {
 				return m_rowBlocks.at(blockIdx).at(rowIdx);
 			}
 
-			[[nodiscard]] Property at(TCRowID rowID, size_t colIdx) const
-			{
-				const RowData& rowData = at(rowID);
-				const TCInfo tcInfo = rowData.tcInfo;
-				const TColDesc& colDesc = tcInfo.rgTCOLDESC.at(colIdx);
-
-				ASSERT((rowData.dwRowID == rowID.dwRowID), "[ERROR]");
-
-				if (rowData.exists(colDesc.iBit))
-				{
-					// Property Type is stored in the lower 16 bits of tag
-					const types::PropertyType propType = utils::PropertyType(colDesc.propType());
-					const utils::PTInfo ptInfo = utils::PropertyTypeInfo(propType);
-
-					Property prop{};
-					// The upper 16 bits of tag is the PropID
-					prop.id = colDesc.propId();
-					prop.propType = propType;
-					prop.info = ptInfo;
-
-					if (ptInfo.isMv || !ptInfo.isFixed || ptInfo.singleEntrySize > 8ULL) // Data stored in Heap(HID) or subnode(NID)
-					{
-						ASSERT((HNID::sizeNBytes == static_cast<size_t>(colDesc.cbData)), "[ERROR]");
-						// An HNID is a 4 byte value so therefore should be within TCI_4b range.
-						ASSERT((colDesc.ibData < tcInfo.rgib.at(TCInfo::TCI_4b)), "[ERROR]");
-						const HNID hnid(
-							utils::slice(
-								rowData.data,
-								static_cast<uint32_t>(colDesc.ibData),
-								colDesc.ibData + static_cast<uint32_t>(colDesc.cbData),
-								static_cast<uint32_t>(colDesc.cbData)
-							)
-						);
-
-						if (hnid.isHID()) // HNID is an HID which means the data is stored in the HN
-						{
-							prop.data = m_hn.getAllocation(hnid.as<HID>());
-						}
-
-						else // HNID is an NID which means that the data is stored in a subnode
-						{
-							ASSERT(false, "[ERROR] Not Implemented");
-						}
-					}
-
-					else if (!ptInfo.isMv && ptInfo.isFixed && ptInfo.singleEntrySize <= 8ULL) // Data stored in RowData
-					{
-						// An HNID is a 4 byte value so therefore should be within TCI_4b range.
-						ASSERT((colDesc.ibData < tcInfo.rgib.at(TCInfo::TCI_4b)), "[ERROR]");
-						prop.data = utils::slice(
-											rowData.data,
-											colDesc.ibData,
-											static_cast<uint16_t>(colDesc.cbData),
-											static_cast<uint16_t>(colDesc.cbData)
-										);
-					}
-
-					else
-					{
-						ASSERT(false, "[ERROR] Invalid Column");
-					}
-					return prop;
-				}
-				//ASSERT(false, "[ERROR] Not handling non-existent columns");
-				return Property{};
-			}
-
 			static TCInfo readTCInfo(const std::vector<types::byte_t>& bytes)
 			{
 				utils::ByteView view(bytes);
 				TCInfo info{};
-				info.bType = utils::toBType(view.read<uint8_t>(1)); // utils::toBType(utils::slice(bytes, 0, 1, 1, utils::toT_l<uint8_t>));
-				info.cCols = view.read<uint8_t>(1); //utils::slice(bytes, 1, 2, 1, utils::toT_l<uint8_t>);
+				info.bType = utils::toBType(view.read<uint8_t>(1));
+				info.cCols = view.read<uint8_t>(1); 
 				info.rgib = view.read<uint16_t>(4, 2);
-				/*std::vector<types::byte_t> rgibBytes = utils::slice(bytes, 2, 10, 8);
-				size_t singlergibSize = 2ull;
-				for (size_t i = 0; i < 4ull; i++)
-				{
-					size_t start = i * singlergibSize;
-					size_t end = start + singlergibSize;
-					info.rgib.push_back(utils::slice(rgibBytes, start, end, singlergibSize, utils::toT_l<uint16_t>));
-				}*/
 				info.hidRowIndex = view.entry<HID>(4);
 				info.hnidRows = view.entry<HNID>(4);
 				/// hidIndex is deprecated. Should be set to 0
 				info.hidIndex = view.read<uint32_t>(4);
-				info.rgTCOLDESC = readTColDesc(view.read(bytes.size() - 22ULL));// readTColDesc(utils::slice(bytes, 22ull, bytes.size(), bytes.size() - 22ull));
+				info.rgTCOLDESC = readTColDesc(view.read(bytes.size() - 22ULL));
 
 				ASSERT((info.bType == types::BType::TC), "[ERROR] Invalid BType");
 				ASSERT((info.cCols == info.rgTCOLDESC.size()), "[ERROR] Invalid size");
@@ -1448,87 +1357,98 @@ namespace reader {
 				return cols;
 			}
 
+			void load()
+			{
+				if (!m_bth.empty())
+				{
+					if (m_header.hnidRows.isHID()) // Row Matrix is in the HN
+					{
+						_loadRowMatrixFromHN();
+					}
+
+					else // Row Matrix must be in a subnode id'ed by a NID
+					{
+						_loadRowMatrixFromSubNodeTree();
+					}
+					LOGIF((m_rowIDs.size() < m_rowsPerBlock),
+						"[WARN] The number of row IDs [%i] is less than the number of rows per block [%i]", 
+						m_rowIDs.size(), m_rowsPerBlock);
+				}
+			}
+
 		private:
 			explicit TableContext(
 				HN&& hn, 
-				const ndb::SubNodeBTree& subtree
+				ndb::SubNodeBTree&& subtree
 			)
-				: m_hn(hn), m_subtree(subtree)
+				: 
+				m_hn(std::move(hn)), 
+				m_header(readTCInfo(m_hn.getAllocation(m_hn.getHeader().hidUserRoot))), 
+				m_bth(m_hn, m_header.hidRowIndex), 
+				m_subtree(std::move(subtree))
 			{
 				static_assert(std::is_move_constructible_v<TableContext>, "TableContext must be move constructible");
 				//static_assert(std::is_move_assignable_v<TableContext>, "TableContext must be move assignable");
 				static_assert(std::is_copy_constructible_v<TableContext>, "TableContext must be copy constructible");
 				//static_assert(std::is_copy_assignable_v<TableContext>, "TableContext must be copy assignable");
 				ASSERT((m_hn.getBType() == types::BType::TC), "[ERROR]");
-				m_header = readTCInfo(m_hn.getAllocation(m_hn.getHeader().hidUserRoot));
-				BTreeHeap bth(m_hn, m_header.hidRowIndex);
-				ASSERT((bth.getKeySize() == 4), "[ERROR]");
-				ASSERT((bth.getDataSize() == 4), "[ERROR]");
+				ASSERT((m_bth.getKeySize() == 4), "[ERROR]");
+				ASSERT((m_bth.getDataSize() == 4), "[ERROR]");
 
-				if (!bth.empty())
+				if (!m_bth.empty())
 				{
-					if (m_header.hnidRows.isHID()) // Row Matrix is in the HN
-					{
-						auto rowBlockBytes = m_hn.getAllocation(m_header.hnidRows.as<HID>());
-						m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
-						/// This check only works for HID allocated Row Matrices
-						ASSERT((m_rowsPerBlock == bth.nrecords()), "[ERROR] Invalid number of rows per block");
-						m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
-					}
-
-					else // Row Matrix must be in a subnode id'ed by a NID
-					{			
-						auto datatree = m_subtree.getDataTree(m_header.hnidRows.as<core::NID>());
-						m_rowsPerBlock = datatree->size(0) / m_header.rgib.at(TCInfo::TCI_bm);
-						for (size_t i = 0; i < datatree->nDataBlocks(); i++)
-						{
-							if (i < datatree->nDataBlocks() - 1)
-							{
-								/// Each block except the last one MUST have a size of 8192 bytes.
-								/// TODO its possible this check will fail because of variable padding
-								ASSERT((datatree->size(i) + 16 == 8192), "[ERROR]");
-							}
-
-							/// last block will potentially have less rows because its allowed
-							/// to have fewer bytes
-							if (i == datatree->nDataBlocks() - 1)
-							{
-								m_rowBlocks.emplace_back(
-									datatree->at(i).data,
-									m_header, 
-									datatree->size(i) / m_header.rgib.at(TCInfo::TCI_bm)
-								);
-								continue;
-							}
-							m_rowBlocks.emplace_back(datatree->at(i).data, m_header, m_rowsPerBlock);
-						}
-					}
-
-					for (const auto& record : bth.records())
+					for (const auto& record : m_bth.records())
 					{
 						m_rowIDs.push_back(record.as<TCRowID>());
 					}
-					LOGIF((m_rowIDs.size() < m_rowsPerBlock),
-						"[WARN] The number of row IDs [%i] is less than the number of rows per block [%i]", m_rowIDs.size(), m_rowsPerBlock);
 				}
-				// Testing only
-				//const RowData& rowdata = at(m_rowIDs.at(0));
-				//Property prop = at(m_rowIDs.at(0), 0);
-				//at(m_rowIDs.at(1), 1);
-				//at(m_rowIDs.at(1), 2);
-				//at(m_rowIDs.at(1), 3);
-				//at(m_rowIDs.at(1), 4);
-				//at(m_rowIDs.at(1), 5);
 			}
 
+			void _loadRowMatrixFromHN()
+			{
+				auto rowBlockBytes = m_hn.getAllocation(m_header.hnidRows.as<HID>());
+				m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
+				/// This check only works for HID allocated Row Matrices
+				ASSERT((m_rowsPerBlock == m_bth.nrecords()), "[ERROR] Invalid number of rows per block");
+				m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
+			}
+
+			void _loadRowMatrixFromSubNodeTree() 
+			{
+				ndb::DataTree* datatree = m_subtree.getDataTree(m_header.hnidRows.as<core::NID>());
+				m_rowsPerBlock = datatree->sizeOfDataBlockData(0) / m_header.rgib.at(TCInfo::TCI_bm);
+				for (size_t i = 0; i < datatree->nDataBlocks(); i++)
+				{
+					if (i < datatree->nDataBlocks() - 1)
+					{
+						/// Each block except the last one MUST have a size of 8192 bytes.
+						/// TODO its possible this check will fail because of variable padding
+						ASSERT((datatree->sizeOfDataBlockData(i) + 16 == 8192), "[ERROR]");
+					}
+
+					/// last block will potentially have less rows because its allowed
+					/// to have fewer bytes
+					if (i == datatree->nDataBlocks() - 1)
+					{
+						m_rowBlocks.emplace_back(
+							datatree->at(i).data,
+							m_header,
+							datatree->sizeOfDataBlockData(i) / m_header.rgib.at(TCInfo::TCI_bm)
+						);
+						continue;
+					}
+					m_rowBlocks.emplace_back(datatree->at(i).data, m_header, m_rowsPerBlock);
+				}
+			}
 
 		private:
 			ndb::SubNodeBTree m_subtree;
 			uint64_t m_rowsPerBlock{0};
 			std::vector<RowBlock> m_rowBlocks;
 			std::vector<TCRowID> m_rowIDs;
-			TCInfo m_header;
 			HN m_hn;
+			TCInfo m_header; // TCInfo has to come after HN			
+			BTreeHeap m_bth; // BTH has to come after HN and m_header
 		};
 
 		class LTP
