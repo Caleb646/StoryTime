@@ -997,7 +997,35 @@ namespace reader {
 					ASSERT(false, "[ERROR] Invalid Property Type");
 					return PropType{};
 				}
-			}	
+			}
+
+			bool DataIsInHNID() const
+			{
+				if (info.isFixed && info.singleEntrySize <= 4) // Data Value
+				{
+					return true;
+				}
+				return false;
+			}
+
+			bool DataIsInHeap() const
+			{
+				ASSERT((data.size() == 4), "[ERROR] Data should be an HNID");
+				if ((info.isFixed && info.singleEntrySize > 4U) || (data[0] & 0x1FU) == 0U) // HID
+				{
+					return true;
+				}
+				return false;
+			}
+
+			bool DataIsInSubNodeTree() const
+			{
+				if(!DataIsInHNID() && !DataIsInHeap())
+				{
+					return true;
+				}
+				return false;
+			}
 		};
 
 		class PropertyContext
@@ -1029,8 +1057,7 @@ namespace reader {
 				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
 				const ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::SubNodeBTree subtree = ndb->InitSubNodeBTree(nbt.bidSub);
-				return PropertyContext(nid, ndb, HN::Init(nid, ndb), subtree);
+				return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.bidSub));
 			}
 
 			auto begin()
@@ -1044,8 +1071,10 @@ namespace reader {
 			}
 
 			template<typename ConvertTo = Property, typename PropIDType>
-			const ConvertTo& at(PropIDType propID) const
+			ConvertTo getProperty(PropIDType propID)
 			{
+				// Load the property data on demand
+				_loadProperty(_convert(propID));
 				if constexpr (std::is_same_v<ConvertTo, Property>)
 				{
 					return m_properties.at(_convert(propID));
@@ -1073,52 +1102,6 @@ namespace reader {
 			{
 				return exists(propID) && is(propID, propType);
 			}
-
-			void readProperties()
-			{
-				uint32_t count{ 0 };
-				uint32_t hnalloced{ 0 };
-				uint32_t inlinealloced{ 0 };
-				for (const auto& record : m_records)
-				{
-					count++;
-					const utils::PTInfo info = utils::PropertyTypeInfo(record.wPropType);
-
-					Property prop{};
-					prop.id = record.wPropId;
-					prop.propType = utils::PropertyType(record.wPropType);
-					prop.info = info;
-
-					const uint32_t sum = record.dwValueHnid[0] + record.dwValueHnid[1] + record.dwValueHnid[2] + record.dwValueHnid[3];
-
-					if (info.isFixed && info.singleEntrySize <= 4) // Data Value
-					{
-						inlinealloced++;
-						prop.data = record.dwValueHnid;
-					}
-					else if (sum == 0U)
-					{
-						LOG("[WARN] Encountered invalid dwValueHNID. PropID: [%X] PropType: [%X]", prop.id, record.wPropType);
-					}		
-					else if ( (info.isFixed && info.singleEntrySize > 4U) || (record.dwValueHnid[0] & 0x1FU) == 0U) // HID
-					{
-						hnalloced++;
-						HID id = HID(record.dwValueHnid);
-						prop.data = m_hn.getAllocation(id);
-					}
-					else // NID
-					{
-						const core::NID nid(record.dwValueHnid);
-						const auto dataPtr = m_subtree.getDataTree(nid);
-						ASSERT((dataPtr != nullptr), "[ERROR]");
-						prop.data = dataPtr->combineDataBlocks();
-					}
-
-					ASSERT((!m_properties.contains(prop.id)), "[ERROR] Duplicate property found");
-					m_properties[prop.id] = prop;
-				}
-				ASSERT((m_properties.size() == m_records.size()), "[ERROR] Invalid size");
-			}
 	
 		private:
 			PropertyContext(
@@ -1133,19 +1116,54 @@ namespace reader {
 				m_bth(m_hn, m_hn.getHeader().hidUserRoot),
 				m_subtree(subTree)
 			{
-				_init();
-			}
-
-			void _init()
-			{
 				ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
 				ASSERT((m_bth.getKeySize() == 2), "[ERROR]");
 				ASSERT((m_bth.getDataSize() == 6), "[ERROR]");
-				for(const auto& record : m_bth.records())
+				_loadMetaProps();
+			}
+
+			void _loadProperty(uint32_t propID)
+			{
+				Property& prop = m_properties.at(propID);
+				ASSERT((prop.data.size() == 4), "[ERROR] Trying to load an already loaded property");
+				if (prop.DataIsInHNID()) // Data Value
 				{
-					m_records.push_back(record.as<PCBTHRecord>());
+					return;
 				}
-				readProperties();
+				else if (prop.DataIsInHeap()) // HID
+				{
+					HID id = HID(prop.data);
+					prop.data = m_hn.getAllocation(id);
+				}
+				else if (prop.DataIsInSubNodeTree()) // NID
+				{
+					const core::NID nid(prop.data);
+					const auto dataPtr = m_subtree.getDataTree(nid);
+					ASSERT((dataPtr != nullptr), "[ERROR]");
+					prop.data = dataPtr->combineDataBlocks();
+				}
+				else
+				{
+					ASSERT(false, "[ERROR] Invalid Property");
+				}
+			}
+
+			void _loadMetaProps()
+			{
+				for (const auto& bthRecord : m_bth.records())
+				{
+					const auto record = bthRecord.as<PCBTHRecord>();
+					const utils::PTInfo info = utils::PropertyTypeInfo(record.wPropType);
+					Property prop{};
+					prop.id = record.wPropId;
+					prop.propType = utils::PropertyType(record.wPropType);
+					prop.info = info;
+					prop.data = record.dwValueHnid;
+
+					ASSERT((!m_properties.contains(prop.id)), "[ERROR] Duplicate property found");
+					m_properties[prop.id] = prop;
+				}
+				ASSERT((m_properties.size() == m_bth.nrecords()), "[ERROR] Invalid size");
 			}
 
 			template<typename PropIDType>
@@ -1166,7 +1184,6 @@ namespace reader {
 			}
 
 		private:
-			std::vector<PCBTHRecord> m_records{};
 			std::map<PropertyID_t, Property> m_properties{};
 			core::NID m_nid;
 			core::Ref<const ndb::NDB> m_ndb;
@@ -1237,7 +1254,7 @@ namespace reader {
 				return m_rowIDs;
 			}
 
-			[[nodiscard]] std::vector<RowEntry> getRow(TCRowID rowID) const
+			[[nodiscard]] std::vector<RowEntry> getRow(TCRowID rowID)
 			{
 				const RowData& rowData = at(rowID);
 				ASSERT((rowData.dwRowID == rowID.dwRowID), "[ERROR]");
@@ -1262,7 +1279,7 @@ namespace reader {
 						}
 						else // Must be stored in a SubNodeBTree and Indexed using an NID
 						{
-							const auto datatree = m_subtree.getDataTree(core::NID(data));
+							ndb::DataTree* datatree = m_subtree.getDataTree(core::NID(data));
 							ASSERT((datatree != nullptr), "[ERROR]");
 							entry.data = datatree->combineDataBlocks();
 						}

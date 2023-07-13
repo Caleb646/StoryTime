@@ -662,7 +662,10 @@ namespace reader::utils {
         explicit ByteView(const std::vector<types::byte_t>& bytes)
             : m_bytes(bytes) {}
         explicit ByteView(const std::vector<types::byte_t>& bytes, size_t start)
-            : m_bytes(bytes), m_start(start) {}
+            : m_bytes(bytes), m_start(start) 
+        {
+            ASSERT((start < bytes.size()), "[ERROR]");
+        }
         ByteView(const ByteView&) = delete;
         ByteView(ByteView&&) = delete;
         ByteView& operator=(const ByteView&) = delete;

@@ -35,7 +35,7 @@ namespace reader
 				*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
 				*/
 				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.nid, ndb, messageSubNodeTree);
-				LOG(pc.at(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
+				LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
 				ltp::TableContext recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
 
 				ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
@@ -144,7 +144,6 @@ namespace reader
 
 				ltp::PropertyContext normal = ltp::PropertyContext::Init(nbtentries.at(types::NIDType::NORMAL_FOLDER).nid, ndb);
 				ltp::TableContext hier = ltp::TableContext::Init(nbtentries.at(types::NIDType::HIERARCHY_TABLE).nid, ndb);
-				//ltp::TableContext hier = ltp::TableContext::Init(core::NID(0x60D), ndb);
 				ltp::TableContext contents = ltp::TableContext::Init(nbtentries.at(types::NIDType::CONTENTS_TABLE).nid, ndb);
 				ltp::TableContext assoc = ltp::TableContext::Init(nbtentries.at(types::NIDType::ASSOC_CONTENTS_TABLE).nid, ndb);
 
@@ -153,10 +152,12 @@ namespace reader
 				ASSERT((normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
 				ASSERT((normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+				LOG("[INFO] Folder Name: [%s]",
+					normal.getProperty<ltp::PTString>(types::PidTagType::DisplayName).data.c_str());
 
 				{
 
-					// TODO: this assert doesnt pass. The PidTagType is found but it has the PropType of PTBinary not PTInt32
+					 //TODO: this assert doesnt pass. The PidTagType is found but it has the PropType of PTBinary not PTInt32
 					//ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
 					ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
 					ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
@@ -231,9 +232,13 @@ namespace reader
 				ltp::TableContext&& contents,
 				ltp::TableContext&& assoc
 				)
-				: m_nid(nid), m_ndb(ndb),  m_normal(normal), 
-				  m_hier(hier), m_contents(contents), 
-				  m_assoc(assoc)
+				: 
+				m_nid(nid), 
+				m_ndb(ndb),  
+				m_normal(normal), 	  
+				m_hier(hier), 
+				m_contents(contents), 
+				m_assoc(assoc)
 			{
 				_setupSubFolders();
 				_setupMessages();
@@ -292,7 +297,7 @@ namespace reader
 
 			EntryID(const std::vector <types::byte_t >& data, const std::vector<types::byte_t>& pidTagRecordKey)
 			{
-				ASSERT((data.size() == 24ull), "EntryID data size is not 24 bytes");
+				ASSERT((data.size() == 24ULL), "EntryID data size is not 24 bytes");
 				rgbFlags = utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>);
 				uuid = utils::slice(data, 4, 20, 16);
 				nid = core::NID(utils::slice(data, 20, 24, 4));
@@ -319,13 +324,13 @@ namespace reader
 				if constexpr (std::is_same_v<PropType, EntryID>)
 				{
 					return EntryID(
-						m_pc.at(pt).asPTBinary().data,
-						m_pc.at(types::PidTagType::RecordKey).asPTBinary().data
+						m_pc.getProperty(pt).asPTBinary().data,
+						m_pc.getProperty(types::PidTagType::RecordKey).asPTBinary().data
 					);
 				}
 				else
 				{
-					return m_pc.at(pt).as<PropType>();
+					return m_pc.getProperty(pt).as<PropType>();
 				}
 			}
 
@@ -376,7 +381,7 @@ namespace reader
 			core::Ref<const ltp::LTP> m_ltp;
 			core::Ref<const ndb::NDB> m_ndb;
 		};
-	} // namespace msg
+	} // namespace reader::msg
 }
 
 

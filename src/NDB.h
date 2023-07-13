@@ -227,6 +227,8 @@ namespace reader::ndb {
     class BTPage
     {
     public:
+        using GetBytes_t = std::function<std::vector<types::byte_t>(uint64_t position)>;
+    public:
         std::vector<BTPage> subPages{};
         /// (Unicode: 488 bytes; ANSI: 496 bytes): Entries of the BTree array.
         /// The entries in the array depend on the value of the cLevel field. If cLevel is greater than 0,
@@ -269,8 +271,11 @@ namespace reader::ndb {
             return { bytes, PageTrailer(view.takeLast(16)), parentCLevel };
         }
 
-        BTPage(const std::vector<types::byte_t>& bytes, PageTrailer&& trailer_, int32_t parentCLevel = -1)
-            : trailer(std::move(trailer_))
+        BTPage(
+            const std::vector<types::byte_t>& bytes, 
+            PageTrailer&& trailer_, 
+            int32_t parentCLevel = -1)
+            : trailer(trailer_)
         {
             utils::ByteView view(bytes);
             view.skip(488); // skip entries for now
@@ -541,23 +546,28 @@ namespace reader::ndb {
 
         [[nodiscard]] size_t nDataBlocks() const
         {
+            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.size();
         }
 
         [[nodiscard]] size_t sizeOfDataBlockData(size_t dataBlockIdx) const
         {
+            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.at(dataBlockIdx).data.size();
         }
 
         [[nodiscard]] const DataBlock& at(size_t idx) const
         {
+            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.at(idx);
         }
 
-        [[nodiscard]] std::vector<types::byte_t> combineDataBlocks() const
+        [[nodiscard]] std::vector<types::byte_t> combineDataBlocks()
         {
+            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
+            const size_t maxBlockSize = 8192U;
             std::vector<types::byte_t> res;
-            res.reserve(nDataBlocks() * 8192);
+            res.reserve(nDataBlocks() * maxBlockSize);
             for (const auto& block : m_dataBlocks)
             {
                 for (auto byte : block.data)
@@ -570,10 +580,7 @@ namespace reader::ndb {
 
         auto begin()
         {
-            if (m_dataBlocks.empty())
-            {
-                load();
-            }
+            load();
             return m_dataBlocks.begin();
         }
         auto end()
@@ -581,16 +588,22 @@ namespace reader::ndb {
             return m_dataBlocks.end();
         }
 
-        void load()
+        DataTree& load()
         {
+            if (m_DataBlocksAreSetup)
+            {
+                LOG("[WARN] Called Load on already loaded datatree");
+                return *this;
+            }
             const auto [blockSize, offset] = calcBlockAlignedSize(m_sizeofFirstBlockData);
-            const size_t blockTrailerSize = 16;
+            const size_t blockTrailerSize = 16U;
 
-            std::vector<types::byte_t> blockBytes = readBlockBytes(m_firstBlockBREF.ib, blockSize);
+            std::vector<types::byte_t> blockBytes = _readBlockBytes(m_firstBlockBREF.ib, blockSize);
             utils::ByteView view(blockBytes);
-            BlockTrailer trailer(view.takeLast(16), m_firstBlockBREF);
+            BlockTrailer trailer(view.takeLast(blockTrailerSize), m_firstBlockBREF);
 
-            ASSERT((trailer.bid == m_firstBlockBREF.bid), "[ERROR] Bids should match");
+            ASSERT((trailer.bid == m_firstBlockBREF.bid), 
+                "[ERROR] Bids should match");
             ASSERT((blockSize - (blockTrailerSize + offset) == trailer.cb),
                 "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
             ASSERT((m_sizeofFirstBlockData == trailer.cb),
@@ -603,25 +616,27 @@ namespace reader::ndb {
             else if (trailer.bid.isInternal()) // the block internal
             {
                 const auto btype = utils::slice(blockBytes, 0, 1, 1, utils::toT_l<uint32_t>);
-                if (btype == 0x01) // XBlock
+                if (btype == 0x01U) // XBlock
                 {
-                    xBlocktoDataBlocks(XBlock::Init(blockBytes, m_firstBlockBREF));
+                    _xBlocktoDataBlocks(XBlock::Init(blockBytes, m_firstBlockBREF));
                 }
 
-                else if (btype == 0x02) // XXBlock
+                else if (btype == 0x02U) // XXBlock
                 {
-                    xxBlocktoDataBlocks(XXBlock::Init(blockBytes, m_firstBlockBREF));
+                    _xxBlocktoDataBlocks(XXBlock::Init(blockBytes, m_firstBlockBREF));
                 }
                 else
                 {
                     ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
                 }
-                flush(); // only flush when there is an X or XX Block
+                _flush(); // only flush when there are X or XX Blocks
             }
             else // Invalid Block Type
             {
                 ASSERT(false, "[ERROR] Unknown block type");
             }
+            m_DataBlocksAreSetup = true;
+            return *this;
         }
 
         /**
@@ -645,14 +660,15 @@ namespace reader::ndb {
 
     private:
 
-        std::vector<types::byte_t> readBlockBytes(uint64_t position, uint64_t blockTotalSize)
+        std::vector<types::byte_t> _readBlockBytes(uint64_t position, uint64_t blockTotalSize)
         {
             m_file->seekg(position, std::ios::beg);
             return utils::readBytes(m_file.get(), blockTotalSize);
         }
 
-        void xBlocktoDataBlocks(const XBlock& xblock)
+        void _xBlocktoDataBlocks(const XBlock& xblock)
         {
+            m_dataBlockBBTs.reserve(xblock.nBids);
             for (const core::BID& bid : xblock.rgbid)
             {
                 const BBTEntry bbt = m_getBBT(bid);
@@ -660,18 +676,18 @@ namespace reader::ndb {
             }
         }
 
-        void xxBlocktoDataBlocks(const XXBlock& xxblock)
+        void _xxBlocktoDataBlocks(const XXBlock& xxblock)
         {
             for (const core::BID& bid : xxblock.rgbid)
             {
                 const BBTEntry bbt = m_getBBT(bid);
                 const auto [blockSize, offset] = calcBlockAlignedSize(bbt.cb);
-                const std::vector <types::byte_t> bytes = readBlockBytes(bbt.bref.ib, blockSize);
-                xBlocktoDataBlocks(XBlock::Init(bytes, bbt.bref));
+                const std::vector <types::byte_t> bytes = _readBlockBytes(bbt.bref.ib, blockSize);
+                _xBlocktoDataBlocks(XBlock::Init(bytes, bbt.bref));
             }
         }
 
-        void flush()
+        void _flush()
         {
             if (m_dataBlockBBTs.empty())
             {
@@ -692,7 +708,7 @@ namespace reader::ndb {
                 auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
                 nBytes += totalSize;
             }
-            std::vector<types::byte_t> allBlocksBytes = readBlockBytes(m_dataBlockBBTs.at(0).bref.ib, nBytes);
+            std::vector<types::byte_t> allBlocksBytes = _readBlockBytes(m_dataBlockBBTs.at(0).bref.ib, nBytes);
             utils::ByteView view(allBlocksBytes);
             m_dataBlocks.reserve(m_dataBlockBBTs.size());
             for (const auto& entry : m_dataBlockBBTs)
@@ -709,6 +725,7 @@ namespace reader::ndb {
         size_t m_sizeofFirstBlockData{ 0 };
         std::vector<BBTEntry> m_dataBlockBBTs{};
         std::vector<DataBlock> m_dataBlocks{};
+        bool m_DataBlocksAreSetup{ false };
     };
     /**
         * @brief SLENTRY are records that refer to internal subnodes of a node.
@@ -839,55 +856,50 @@ namespace reader::ndb {
         using GetBBT_t = std::function<BBTEntry(const core::BID& bid)>;
             
     public:
-
         SubNodeBTree(core::BID bid, core::Ref<std::ifstream> file, const GetBBT_t& getBBT)
             : m_bid(bid), m_file(file), m_getBBT(getBBT)
         {
-            if (m_bid.getBidRaw() != 0) // When BID == 0 there is no subnode tree
+            if (m_bid.getBidRaw() != 0) //&& m_bid.getBidRaw() != 1978398) // When BID == 0 there is no subnode tree
             {
-                const auto [bytes, bbt] = readBlockBytes(m_bid);
+                const auto [bytes, bbt] = _readBlockBytes(m_bid);
                 const uint8_t clevel = bytes.at(1);
                 if (clevel == 0x00) // SL Block
                 {
-                    m_slblocks.push_back(SLBlock::Init(bytes, bbt.bref));
+                    _slBlockToSLEntries(SLBlock::Init(bytes, bbt.bref));
                 }
                 else if (clevel == 0x01) // SI Block
                 {
-                    const SIBlock siblock = SIBlock::Init(bytes, bbt.bref);
-                    for (const auto& sientry : siblock.entries)
-                    {
-                        const auto [slBlockBytes, slBlockBBT] = readBlockBytes(sientry.bid);
-                        m_slblocks.emplace_back(SLBlock::Init(slBlockBytes, slBlockBBT.bref));
-                    }
+                    _siBlockToSLEntries(SIBlock::Init(bytes, bbt.bref));
                 }
                 else // Encountered Invalid Block Type
                 {
                     ASSERT(false, "[ERROR] Unknown SubNode Type");
                 }
 
-                for (const auto& slblock : m_slblocks)
+                m_subtrees.reserve(m_slentries.size());
+                m_datatrees.reserve(m_slentries.size());
+
+                for (const SLEntry& slentry : m_slentries)
                 {
-                    for (const SLEntry& slentry : slblock.entries)
+                    const uint32_t nidID = slentry.nid.getNIDRaw();
+                    ASSERT(!m_subtrees.contains(nidID), "[ERROR] Duplicate entry in Nested SubNodeBTree Map");
+                    ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry In DataTree Map");
+                    if (slentry.bidSub.getBidRaw() != 0) // theres a nested subnode btree
                     {
-                        const uint32_t nidID = slentry.nid.getNIDRaw();
-                        ASSERT(!m_subtrees.contains(nidID), "[ERROR] Duplicate entry in Nested SubNodeBTree Map");
-                        ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry In DataTree Map");
-                        if (slentry.bidSub.getBidRaw() != 0) // theres a nested subnode btree
-                        {
-                            LOG("[WARN] A nested SubNodeBTree was created");
-                            m_subtrees.emplace(
-                                std::piecewise_construct,
-                                std::forward_as_tuple(nidID),
-                                std::forward_as_tuple(slentry.bidSub, m_file, m_getBBT)
-                            );
-                        }
-                        const auto [dataTreeBytes, dataTreeBBT] = readBlockBytes(slentry.bidData);
-                        m_datatrees.emplace(
+                        LOG("[WARN] A nested SubNodeBTree was created");
+                        m_subtrees.emplace(
                             std::piecewise_construct,
                             std::forward_as_tuple(nidID),
-                            std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.bref, dataTreeBBT.cb)
+                            std::forward_as_tuple(slentry.bidSub, m_file, m_getBBT)
                         );
                     }
+                    //const auto [dataTreeBytes, dataTreeBBT] = readBlockBytes(slentry.bidData);
+                    const BBTEntry dataTreeBBT = m_getBBT(slentry.bidData);
+                    m_datatrees.emplace(
+                        std::piecewise_construct,
+                        std::forward_as_tuple(nidID),
+                        std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.bref, dataTreeBBT.cb)
+                    );
                 }
             }
         }
@@ -896,32 +908,14 @@ namespace reader::ndb {
         {
             if (m_datatrees.contains(nid.getNIDRaw()))
             {
-                return &m_datatrees.at(nid.getNIDRaw());
+                return &m_datatrees.at(nid.getNIDRaw()).load();
             }
             for (auto& [_, subtree] : m_subtrees)
             {
                 DataTree* data = subtree.getDataTree(nid);
                 if (data != nullptr)
                 {
-                    return data;
-                }
-            }
-            LOG("[WARN] Failed to find DataBlock in SubNode Tree");
-            return nullptr;
-        }
-
-        [[nodiscard]] const DataTree* const getDataTree(core::NID nid) const
-        {
-            if (m_datatrees.contains(nid.getNIDRaw()))
-            {
-                return &m_datatrees.at(nid.getNIDRaw());
-            }
-            for (const auto& [_, subtree] : m_subtrees)
-            {
-                const auto data = subtree.getDataTree(nid);
-                if (data != nullptr)
-                {
-                    return data;
+                    return &data->load(); // Make sure Data Tree is loaded
                 }
             }
             LOG("[WARN] Failed to find DataBlock in SubNode Tree");
@@ -948,14 +942,6 @@ namespace reader::ndb {
             return nullptr;
         }
 
-        std::pair<std::vector<types::byte_t>, BBTEntry> readBlockBytes(core::BID bid)
-        {
-            const BBTEntry bbt = m_getBBT(bid);
-            const size_t totalBlockSize = calcBlockAlignedSize(bbt.cb);
-            m_file->seekg(bbt.bref.ib, std::ios::beg);
-            return { utils::readBytes(m_file.get(), totalBlockSize), bbt };
-        }
-
         /**
          * @brief 
          * @param dataSize is the size of btype + clevel + cEnt + dwpadding + plus cEnt * Entry Size  
@@ -973,29 +959,69 @@ namespace reader::ndb {
         }
 
     private:
+        void _slBlockToSLEntries(const SLBlock& block) // SL Block to SL Entries
+        {
+            for (const SLEntry& slentry : block.entries)
+            {
+                m_slentries.push_back(slentry);
+            }
+        }
+
+        void _siBlockToSLEntries(const SIBlock& block) // SI Block to SL Entries
+        {
+            std::vector<BBTEntry> entries;
+            entries.reserve(block.entries.size());
+            for (const SIEntry& sientry : block.entries)
+            {
+                const BBTEntry bbt = m_getBBT(sientry.bid);
+                entries.push_back(bbt);
+                //const auto [slBlockBytes, slBlockBBT] = _readBlockBytes(sientry.bid);
+                //_slBlockToSLEntries(SLBlock::Init(slBlockBytes, slBlockBBT.bref));
+            }
+            for (size_t i = 1; i < entries.size(); ++i)
+            {
+                const size_t start = entries.at(i - 1).bref.ib;
+                const size_t end = entries.at(i).bref.ib;
+                const size_t expectedSize = calcBlockAlignedSize(entries.at(i - 1).bref.ib);
+                ASSERT((start < end), "[ERROR]");
+                ASSERT((end - start == expectedSize), "[ERROR]");
+            }
+            size_t nBytes{ 0 };
+            for (const BBTEntry& bbt : entries)
+            {
+                nBytes += calcBlockAlignedSize(bbt.bref.ib);
+            }
+            std::vector<types::byte_t> SLBlocksBytes = _readBlockBytes(entries.at(0).bref.ib, nBytes);
+            utils::ByteView view(SLBlocksBytes);
+            for (const BBTEntry& bbt : entries)
+            {
+                const size_t blockSize = calcBlockAlignedSize(bbt.bref.ib);
+                _slBlockToSLEntries(SLBlock::Init(view.read(blockSize), bbt.bref));
+            }
+        }
+
+        std::vector<types::byte_t> _readBlockBytes(uint64_t position, uint64_t totalSize)
+        {
+            return utils::readBytes(m_file.get(), totalSize);
+        }
+
+        std::pair<std::vector<types::byte_t>, BBTEntry> _readBlockBytes(core::BID bid)
+        {
+            const BBTEntry bbt = m_getBBT(bid);
+            const size_t totalBlockSize = calcBlockAlignedSize(bbt.cb);
+            m_file->seekg(bbt.bref.ib, std::ios::beg);
+            return { utils::readBytes(m_file.get(), totalBlockSize), bbt };
+        }
+
+    private:
         core::BID m_bid;
         core::Ref<std::ifstream> m_file;
         GetBBT_t m_getBBT;
-        std::vector<SLBlock> m_slblocks;
+        std::vector<SLEntry> m_slentries;
         // uint32_t is a Raw NID
         std::unordered_map<uint32_t, SubNodeBTree> m_subtrees;
         // uint32_t is a Raw NID
         std::unordered_map<uint32_t, DataTree> m_datatrees;
-    };
-
-    class SubNodeTreeContainer
-    {
-    public:
-        SubNodeTreeContainer(core::BID bid, core::Ref<std::ifstream> file, const SubNodeBTree::GetBBT_t& getBBT)
-            : m_bid(bid), m_file(file), m_getBBT(getBBT)
-        {
-
-        }
-    private:
-        std::unordered_map<uint32_t, SubNodeBTree> m_subtrees;
-        core::Ref<std::ifstream> m_file;
-        core::BID m_bid;
-        SubNodeBTree::GetBBT_t m_getBBT;
     };
 
     template<typename LeafEntryType>
@@ -1083,7 +1109,7 @@ namespace reader::ndb {
                     for (size_t j = 0; j < page.rgentries.size(); j++)
                     {
                         auto entry = page.rgentries.at(j).as<LeafEntryType>();
-                        if constexpr (LeafEntryType::id() == BBTEntry::id())
+                        if constexpr (std::is_same_v<LeafEntryType, BBTEntry>)
                         {
                             if (entry.bref.bid == id)
                             {
@@ -1115,8 +1141,8 @@ namespace reader::ndb {
                 {
                     for (size_t j = 0; j < page.rgentries.size(); j++)
                     {
-                        LeafEntryType entry = page.rgentries.at(j).as<LeafEntryType>();
-                        if constexpr (LeafEntryType::id() == BBTEntry::id())
+                        const auto entry = page.rgentries.at(j).as<LeafEntryType>();
+                        if constexpr (std::is_same_v<LeafEntryType, BBTEntry>)
                         {
                             if (entry.bref.bid == id)
                             {
@@ -1149,7 +1175,7 @@ namespace reader::ndb {
     private:
         void _init()
         {
-            m_pages.reserve(20000);
+            m_pages.reserve(30000);
             if constexpr (std::is_same_v<LeafEntryType, NBTEntry>)
             {
                 ASSERT((rootPage().trailer.ptype == types::PType::NBT), "[ERROR] Root BTPage with NBTEntries must be NBT");
@@ -1173,7 +1199,8 @@ namespace reader::ndb {
     public:
         NDB(
             std::ifstream& file,
-            core::Header header)
+            core::Header header
+        )
             :
             m_file(file),
             m_header(header),
@@ -1262,7 +1289,11 @@ namespace reader::ndb {
         {
             // from the begning of the file move to .ib
             m_file.seekg(bref.ib, std::ios::beg);
-            return BTPage::Init(utils::readBytes(m_file, BTPage::size), bref, parentCLevel);
+            return BTPage::Init(
+                utils::readBytes(m_file, BTPage::size),
+                bref, 
+                parentCLevel
+            );
         }
 
     private:
@@ -1272,6 +1303,8 @@ namespace reader::ndb {
             _buildBTree(m_rootNBT);
             _buildBTree(m_rootBBT);
             verify();
+
+            LOG("[%i]", m_rootBBT.count(core::BID(1978398)));
         }
 
         template<typename LeafEntryType>
@@ -1280,7 +1313,7 @@ namespace reader::ndb {
             types::PType rootPagePType = btree.ptype();
 
             size_t idxProcessing = 0;
-            int maxIter = 1000;
+            int maxIter = 100000; // TODO: This needs to be changed. Can cause not all of BTPages to be read.
             while (idxProcessing < btree.size() && --maxIter > 0)
             {
                 const BTPage& currentPage = btree.at(idxProcessing);
@@ -1297,7 +1330,6 @@ namespace reader::ndb {
                 }
                 idxProcessing++;
             }
-            LOG("hehll");
             LOG("[INFO] %s has %i subpages", 
                 utils::PTypeToString(rootPagePType).c_str(), btree.size());
         }
