@@ -732,7 +732,7 @@ namespace reader {
 
 			static HNBitMapHDR readHNBitMapHDR(const std::vector<types::byte_t>& bytes)
 			{
-				ASSERT((bytes.size() == 66), "[ERROR] Invalid size");
+				//ASSERT((bytes.size() == 66), "[ERROR] Invalid size");
 				utils::ByteView view(bytes);
 				HNBitMapHDR hdr{};
 				hdr.ibHnpm = view.read<uint16_t>(2); // utils::slice(bytes, 0, 2, 2, utils::toT_l<uint16_t>);

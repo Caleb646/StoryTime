@@ -5,6 +5,7 @@
 #include <string>
 #include <fstream>
 #include <format>
+#include <array>
 
 #include "types.h"
 
@@ -550,10 +551,14 @@ namespace reader::utils {
         return result;
     }
 
-    template<typename T = int>
-    T toT_l(const std::vector<types::byte_t>& b)
+    template<typename T, typename Container = std::vector<types::byte_t>>
+    T toT_l(const Container& b)
     {
-        auto bytes = pad(b, sizeof(T) - b.size());
+        auto bytes = b; //pad(b, sizeof(T) - b.size());
+        if constexpr (std::is_same_v<Container, std::vector<types::byte_t>>)
+        {
+            bytes = pad(b, sizeof(T) - b.size());
+        }
         ASSERT((sizeof(T) == bytes.size()), "[ERROR] toT_l T not [%i].", sizeof(T));
         if constexpr (sizeof(T) == 1)
         {
@@ -733,7 +738,7 @@ namespace reader::utils {
             for (size_t i = 0; i < nEntries; i++)
             {
                 // Do NOT need to increment m_start here because the
-                // entry method is doing it for us.
+                // entry method is doing it.
                 res.push_back(entry<EntryType>(singleEntrySize, std::forward<Args>(args)...));
             }
             return res;
@@ -771,6 +776,61 @@ namespace reader::utils {
         const std::vector<types::byte_t>& m_bytes;
         size_t m_start{ 0 };
     };
+
+    template<typename DataType, size_t Size>
+    class ArrayView
+    {
+    public:
+        ArrayView(const std::array<DataType, Size>& data, size_t start, size_t end)
+        : m_data(data), m_start(start), m_end(end) {}
+
+        template<typename To_t>
+        To_t to(size_t size)
+        {
+            const size_t start = m_start;
+            m_start += size;
+            return toT_l<To_t>(ArrayView<DataType, Size>(m_data, start, m_start));
+        }
+
+        DataType operator[] (size_t index) const
+        {
+            return m_data[m_start + index];
+        }
+
+        [[nodiscard]] size_t size() const
+        {
+            return m_end - m_start;
+        }
+    private:
+        const std::array<DataType, Size>& m_data;
+        size_t m_start{ 0 };
+        size_t m_end{ 0 };
+
+    };
+
+    template<class DataType, size_t Size>
+    class Array
+    {
+    public:
+        Array() = default;
+        explicit Array(const std::vector<types::byte_t>& data)
+        {
+            static_assert(std::is_same_v<DataType, types::byte_t>);
+            for (size_t i = 0; i < data.size(); ++i)
+            {
+                m_data[i] = data.at(i);
+            }
+        }
+
+        ArrayView<DataType, Size> view(size_t start, size_t end) const
+        {
+            return ArrayView<DataType, Size>(m_data, start, end);
+        }
+    private:
+        std::array<DataType, Size> m_data{};
+    };
+
+
 
     /*
     *

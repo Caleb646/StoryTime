@@ -182,6 +182,9 @@ namespace reader::core {
             bid = view.entry<BID>(8);
             ib = view.read<uint64_t>(8);
         }
+
+        explicit BREF(uint64_t bid_, uint64_t ib_)
+            : bid(bid_), ib(ib_) {}
     };
 
     struct Root

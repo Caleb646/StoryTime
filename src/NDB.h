@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_map>
 #include <format>
+#include <array>
 
 #include "types.h"
 #include "utils.h"
@@ -98,11 +99,11 @@ namespace reader::ndb {
         /// (Unicode: 8 bytes; ANSI: 4 bytes): The key value associated with this BTENTRY
         /// The btkey is either an NID (zero extended to 8 bytes for Unicode PSTs)
         /// or a BID, depending on the ptype of the page.
-        std::vector<types::byte_t> btkey{};
+        uint64_t btkey{};
         /// (Unicode: 16 bytes): BREF structure (section 2.2.2.4) that points to the child BTPAGE.
         core::BREF bref{};
 
-        static constexpr size_t size = 24;
+        static constexpr size_t sizeNBytes = 24;
         static constexpr size_t id() { return 1; }
     };
 
@@ -120,7 +121,7 @@ namespace reader::ndb {
         /// dwPadding (Unicode file format only, 4 bytes): Padding; MUST be set to zero.
         std::uint32_t dwPadding{};
         
-        static constexpr size_t size = 24;
+        static constexpr size_t sizeNBytes = 24;
         static constexpr size_t id() { return 2; }
     };
 
@@ -145,36 +146,41 @@ namespace reader::ndb {
         core::BID bidSub{};
         /// (Unicode file format only, 4 bytes): Padding; MUST be set to zero.
         uint32_t dwPadding{};
+    public:
+ 
+        [[nodiscard]] bool hasSubNode() const { return bidSub.getBidRaw() != 0; }
+        static constexpr size_t id() { return 3; }
+        static constexpr size_t sizeNBytes = 32;
 
-        static constexpr size_t size = 32;
-        bool hasSubNode() const { return bidSub.getBidIndex() != 0; }
-        static constexpr int64_t id() { return 3; }
     };
 
     class Entry 
     {
     public:
         explicit Entry(const std::vector<types::byte_t>& data) : m_data(data) {}
+        explicit Entry(const utils::Array<types::byte_t, 32>& data) : m_data(data) {}
 
         [[nodiscard]] BTEntry asBTEntry() const
         {
-            ASSERT((m_data.size() == BTEntry::size), "[ERROR] Incorrect size for BTEntry");
-            utils::ByteView view(m_data);
-            BTEntry entry{};
-            entry.btkey = view.read(8);
-            entry.bref = view.entry<core::BREF>(16);
+            utils::ArrayView view = m_data.view(0, BTEntry::sizeNBytes);
+            BTEntry entry{};  
+            entry.btkey = view.to<uint64_t>(8);// view.read(8);
+            const uint64_t bid = view.to<uint64_t>(8);
+            const uint64_t ib = view.to<uint64_t>(8);
+            entry.bref = core::BREF(bid, ib); // view.entry<core::BREF>(16);
             return entry;
         }
 
         [[nodiscard]] BBTEntry asBBTEntry() const
         {
-            ASSERT((m_data.size() == BBTEntry::size), "[ERROR] BBTEntry must be 24 bytes not %i", m_data.size());
-            utils::ByteView view(m_data);
+            utils::ArrayView view = m_data.view(0, BBTEntry::sizeNBytes);
             BBTEntry entry{};
-            entry.bref = view.entry<core::BREF>(16); 
-            entry.cb = view.read<uint16_t>(2);
-            entry.cRef = view.read<uint16_t>(2); 
-            entry.dwPadding = view.read<uint32_t>(4);
+            const uint64_t bid = view.to<uint64_t>(8);
+            const uint64_t ib = view.to<uint64_t>(8);
+            entry.bref = core::BREF(bid, ib); //view.entry<core::BREF>(16); 
+            entry.cb = view.to<uint16_t>(2); // view.read<uint16_t>(2);
+            entry.cRef = view.to<uint16_t>(2); // view.read<uint16_t>(2);
+            entry.dwPadding = view.to<uint32_t>(4); // view.read<uint32_t>(4);
 
             //ASSERT((entry.dwPadding == 0),
             //    "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
@@ -183,14 +189,13 @@ namespace reader::ndb {
 
         [[nodiscard]] NBTEntry asNBTEntry() const
         {
-            ASSERT((m_data.size() == NBTEntry::size), "[ERROR] NBTEntry must be 32 bytes not %i", m_data.size());
-            utils::ByteView view(m_data);
+            utils::ArrayView view = m_data.view(0, NBTEntry::sizeNBytes);
             NBTEntry entry{};
-            entry.nid = view.entry<core::NID>(8);
-            entry.bidData = view.entry<core::BID>(8);
-            entry.bidSub = view.entry<core::BID>(8); 
-            entry.nidParent = view.entry<core::NID>(4);
-            entry.dwPadding = view.read<uint32_t>(4);
+            entry.nid = core::NID(view.to<uint64_t>(8)); // view.entry<core::NID>(8);
+            entry.bidData = core::BID(view.to<uint64_t>(8)); // view.entry<core::BID>(8);
+            entry.bidSub = core::BID(view.to<uint64_t>(8));  //view.entry<core::BID>(8);
+            entry.nidParent = core::NID(view.to<uint32_t>(4)); // view.entry<core::NID>(4);
+            entry.dwPadding = view.to<uint32_t>(4); //view.read<uint32_t>(4);
             //ASSERT((entry.dwPadding == 0),
             //   "[ERROR] dwPadding must be 0 for BBTEntry not %i", entry.dwPadding);
             return entry;
@@ -218,10 +223,8 @@ namespace reader::ndb {
             }
 		}
 
-        [[nodiscard]] size_t size() const { return m_data.size(); }
-
     private:
-        std::vector<types::byte_t> m_data{};
+        utils::Array<types::byte_t, 32> m_data{};
     };
 
     class BTPage
@@ -285,8 +288,8 @@ namespace reader::ndb {
             singleEntrySize = view.read<uint8_t>(1);
             cLevel = view.read<uint8_t>(1);
             dwPadding = view.read<uint32_t>(4);
-            view.setStart(0); // reset to beginning of bytes to read the entries
-            rgentries = view.entries<Entry>(nEntries, singleEntrySize);
+            // reset to beginning of bytes to read the entries
+            rgentries = view.setStart(0).entries<Entry>(nEntries, singleEntrySize);
 
             ASSERT((trailer.ptype == types::PType::BBT || trailer.ptype == types::PType::NBT), "[ERROR] Invalid ptype for pagetrailer");
             ASSERT((nEntries <= maxNEntries), "[ERROR] Invalid cEnt %i", nEntries);
@@ -389,10 +392,10 @@ namespace reader::ndb {
                 ASSERT((page.trailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
                 ASSERT((page.nEntries == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
                 //ASSERT(page.getEntryType(), -1), "[ERROR] Subpage has invalid entry type.");
-                for (const auto& entry : page.rgentries)
-                {
-                    ASSERT((entry.size() == page.singleEntrySize), "[ERROR] Entry Size mismatch");
-                }
+                //for (const auto& entry : page.rgentries)
+                //{
+                //    ASSERT((entry.size() == page.singleEntrySize), "[ERROR] Entry Size mismatch");
+                //}
                 return true;
             }
     };
@@ -687,6 +690,33 @@ namespace reader::ndb {
             }
         }
 
+        bool _DataBlocksAreStoredContiguously()
+        {
+            for (size_t i = 1; i < m_dataBlockBBTs.size(); ++i)
+            {
+                const uint64_t start = m_dataBlockBBTs.at(i - 1).bref.ib;
+                const uint64_t end = m_dataBlockBBTs.at(i).bref.ib;
+                auto [expectedSize, offset] = calcBlockAlignedSize(m_dataBlockBBTs.at(i - 1).cb);
+                if (start > end || end - start != expectedSize)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        size_t _TotalDataBlockFileBytes()
+        {
+            ASSERT((_DataBlocksAreStoredContiguously()), "[ERROR]");
+            size_t nBytes{ 0 };
+            for (const auto& entry : m_dataBlockBBTs)
+            {
+                auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
+                nBytes += totalSize;
+            }
+            return nBytes;
+        }
+
         void _flush()
         {
             if (m_dataBlockBBTs.empty())
@@ -694,27 +724,26 @@ namespace reader::ndb {
                 LOG("[WARN] Flush was called with 0 data block BBTs");
                 return;
             }
-            for (size_t i = 1; i < m_dataBlockBBTs.size(); ++i)
+
+            if (_DataBlocksAreStoredContiguously())
             {
-                const uint64_t start = m_dataBlockBBTs.at(i - 1).bref.ib;
-                const uint64_t end = m_dataBlockBBTs.at(i).bref.ib;
-                auto [expectedSize, offset] = calcBlockAlignedSize(m_dataBlockBBTs.at(i - 1).cb);
-                ASSERT((start < end), "[ERROR]");
-                ASSERT((end - start == expectedSize), "[ERROR]");
+                size_t nBytes = _TotalDataBlockFileBytes();
+                std::vector<types::byte_t> allBlocksBytes = _readBlockBytes(m_dataBlockBBTs.at(0).bref.ib, nBytes);
+                utils::ByteView view(allBlocksBytes);
+                m_dataBlocks.reserve(m_dataBlockBBTs.size());
+                for (const auto& entry : m_dataBlockBBTs)
+                {
+                    auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
+                    m_dataBlocks.push_back(DataBlock::Init(view.read(totalSize), entry.bref));
+                }
             }
-            size_t nBytes{ 0 };
-            for (const auto& entry : m_dataBlockBBTs)
+            else
             {
-                auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
-                nBytes += totalSize;
-            }
-            std::vector<types::byte_t> allBlocksBytes = _readBlockBytes(m_dataBlockBBTs.at(0).bref.ib, nBytes);
-            utils::ByteView view(allBlocksBytes);
-            m_dataBlocks.reserve(m_dataBlockBBTs.size());
-            for (const auto& entry : m_dataBlockBBTs)
-            {
-                auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
-                m_dataBlocks.push_back(DataBlock::Init(view.read(totalSize), entry.bref));
+                for (const auto& entry : m_dataBlockBBTs)
+                {
+                    auto [totalSize, offset] = calcBlockAlignedSize(entry.cb);
+                    m_dataBlocks.push_back(DataBlock::Init(_readBlockBytes(entry.bref.ib, totalSize), entry.bref));
+                }
             }
         }
 
