@@ -7,6 +7,7 @@
 #include <fstream>
 #include <utility>
 #include <map>
+#include <unordered_map>
 
 #include "types.h"
 #include "utils.h"
@@ -27,14 +28,14 @@ namespace reader
 			static MessageObject Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
 				ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
-				const ndb::NBTEntry nbt = ndb->get(nid);
-				ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.bidSub);
+				const auto nbt = ndb->get(nid);
+				ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.value().bidSub);
 				/*
 				* nbt.bidData is the location of the dataTree for the PC
 				* nbt.bidSub is the location of the SubNodeTree for the Message Object.
 				*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
 				*/
-				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.nid, ndb, messageSubNodeTree);
+				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.value().nid, ndb, messageSubNodeTree);
 				LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
 				ltp::TableContext recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
 
@@ -81,7 +82,7 @@ namespace reader
 				return MessageObject(
 					nid, 
 					ndb, 
-					ndb->InitSubNodeBTree(nbt.bidSub), 
+					ndb->InitSubNodeBTree(nbt.value().bidSub),
 					std::move(pc), 
 					std::move(recip)
 				);
@@ -135,7 +136,7 @@ namespace reader
 		public:
 			static Folder Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				std::map<types::NIDType, ndb::NBTEntry> nbtentries = ndb->all(nid);
+				std::unordered_map<types::NIDType, ndb::NBTEntry> nbtentries = ndb->all(nid);
 				ASSERT((nbtentries.size() == 4), "[ERROR] A Folder must be composed of 4 Parts");
 				ASSERT((nbtentries.count(types::NIDType::NORMAL_FOLDER) == 1), "[ERROR] A Folder must have a NORMAL_FOLDER");
 				ASSERT((nbtentries.count(types::NIDType::HIERARCHY_TABLE) == 1), "[ERROR] A Folder must have a HIERARCHY_TABLE");

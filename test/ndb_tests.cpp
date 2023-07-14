@@ -211,23 +211,18 @@ namespace ndb_tests
 		const BTPage btpage = BTPage::Init(sample_btpage);
 		const BTPage nbtpage = BTPage::Init(sample_nbtentryPage);
 		const BTPage bbtpage = BTPage::Init(sample_bbtentryPage);
-		const BTree<NBTEntry> nodes(nbtpage);
-		const BTree<BBTEntry> blocks(bbtpage);
 		int odd, even;
-		for (const BTPage& page : nodes)
+		odd = 1;
+		even = 2;
+		for (const auto& entry : nbtpage.rgentries)
 		{
-			odd = 1;
-			even = 2;
-			for ([[maybe_unused]] const auto& e : page.rgentries)
-			{
-				const NBTEntry& nbt = nodes.get(NID(odd));
-				const BBTEntry& bbt = blocks.get(nbt.bidData);
-				ASSERT_EQ(nbt.nid, NID(odd));
-				ASSERT_EQ(nbt.bidData, BID(even));
-				ASSERT_EQ(bbt.bref.bid, BID(even));
-				odd += 2;
-				even += 2;
-			}
+			const NBTEntry nbt = nbtpage.get<NBTEntry>(NID(odd)).value();
+			const BBTEntry& bbt = bbtpage.get<BBTEntry>(nbt.bidData).value();
+			ASSERT_EQ(nbt.nid, NID(odd));
+			ASSERT_EQ(nbt.bidData, BID(even));
+			ASSERT_EQ(bbt.bref.bid, BID(even));
+			odd += 2;
+			even += 2;
 		}
 	}
 };

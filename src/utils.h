@@ -660,6 +660,19 @@ namespace reader::utils {
         return convert(readBytes(file, numBytes));
     }
 
+    std::vector<types::byte_t> readBytes(
+        std::ifstream& file,
+        uint64_t position,
+        size_t numBytes)
+    {
+        ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        std::vector<types::byte_t> res(numBytes, '\0');
+        file.seekg(position, std::ios::beg);
+        file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
+        ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        return res;
+    }
+
 
     class ByteView
     {

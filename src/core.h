@@ -72,12 +72,36 @@ namespace reader::core {
             return m_bid;
         }
 
-        bool operator==(const BID& other) const
+        template<typename T>
+        bool operator==(const T& other) const
 		{
-            ASSERT((m_isSetup == true), "[ERROR] BID not setup");
-            //return getBidIndex() == other.getBidIndex();
-            return getBidRaw() == other.getBidRaw();
+            if constexpr (std::is_same_v<T, BID>)
+            {
+                return getBidRaw() == other.getBidRaw();
+            }
+            else
+            {
+                return getBidRaw() == other;
+            }
 		}
+
+        template<typename T>
+        bool operator<(const T& other) const
+        {
+            if constexpr (std::is_same_v<T, BID>)
+            {
+                return getBidRaw() < other.getBidRaw();
+            }
+            else
+            {
+                return this->getBidRaw() < other;
+            }
+        }
+        template<typename T>
+        bool operator>(const T& other) const
+        {
+            return !(*this < other);
+        }
 
         [[nodiscard]] bool isSetup() const { return m_isSetup; }
 
@@ -107,11 +131,35 @@ namespace reader::core {
             m_nid = view.read<uint32_t>(4);
         }
 
-        bool operator==(const NID& other) const
+        template<typename T>
+        bool operator==(const T& other) const
 		{
-			return getNIDRaw() == other.getNIDRaw();
-            //return getNIDIndex() == other.getNIDIndex();
+            if constexpr (std::is_same_v<T, NID>)
+            {
+                return getNIDRaw() == other.getNIDRaw();
+            }
+            else
+            {
+                return getNIDRaw() == other;
+            }
 		}
+        template<typename T>
+        bool operator<(const T& other) const
+        {
+            if constexpr (std::is_same_v<T, NID>)
+            {
+                return getNIDRaw() < other.getNIDRaw();
+            }
+            else
+            {
+                return getNIDRaw() < other;
+            }
+        }
+        template<typename T>
+        bool operator>(const T& other) const
+        {
+            return !(*this < other);
+        }
 
         static constexpr size_t id()
         {

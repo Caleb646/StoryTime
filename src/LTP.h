@@ -6,6 +6,7 @@
 #include <fstream>
 #include <utility>
 #include <algorithm>
+#include <unordered_map>
 
 #include "types.h"
 #include "utils.h"
@@ -609,9 +610,9 @@ namespace reader {
 		public:
 			static HN Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				const ndb::NBTEntry nbt = ndb->get(nid);
-				const ndb::BBTEntry bbt = ndb->get(nbt.bidData);
-				return HN(nid, ndb->InitDataTree(bbt.bref, bbt.cb));
+				const auto nbt = ndb->get(nid);
+				const auto bbt = ndb->get(nbt.value().bidData);
+				return HN(nid, ndb->InitDataTree(bbt.value().bref, bbt.value().cb));
 			}
 
 			static HN Init(core::NID nid, ndb::DataTree&& dtree)
@@ -1056,8 +1057,8 @@ namespace reader {
 				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
 				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
-				const ndb::NBTEntry nbt = ndb->get(nid);
-				return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.bidSub));
+				const auto nbt = ndb->get(nid);
+				return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
 			}
 
 			auto begin()
@@ -1245,8 +1246,8 @@ namespace reader {
 
 			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{			
-				const ndb::NBTEntry nbt = ndb->get(nid);
-				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.bidSub));
+				const auto nbt = ndb->get(nid);
+				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
 			}
 
 			[[nodiscard]] std::vector<TCRowID> rowIDs() const
