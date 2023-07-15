@@ -25,6 +25,8 @@ namespace reader {
 		class HID
 		{
 		public:
+			static constexpr size_t SizeNBytes = 4;
+		public:
 			HID() = default;
 			explicit HID(const std::vector<types::byte_t>& data)
 				: m_hid(utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>))
@@ -219,10 +221,20 @@ namespace reader {
 			/// The size of the key is specified in the cbKey field in the corresponding BTHHEADER 
 			/// structure (section 2.3.2.1). The size and contents of the key are specific to the 
 			/// higher level structure that implements this BTH. 
-			std::vector<types::byte_t> key{};
+			uint64_t key{};
 			/// (4 bytes): HID of the next level index record array. This contains the HID of the heap 
 			/// item that contains the next level index record array.
 			HID hidNextLevel{};
+
+			IntermediateBTHRecord(const std::vector<types::byte_t>& bytes, size_t keySize, size_t dataSize)
+			{
+				ASSERT((keySize <= sizeof(uint64_t)), "[ERROR]");
+				ASSERT((dataSize == HID::SizeNBytes), "[ERROR]");
+				ASSERT((bytes.size() == keySize + dataSize), "[ERROR]");
+				utils::ByteView view(bytes);
+				key = view.read<uint64_t>(keySize);
+				hidNextLevel = view.entry<HID>(dataSize);
+			}
 
 			static constexpr size_t id() { return 6;}
 		};
@@ -495,11 +507,7 @@ namespace reader {
 			)
 			{
 				ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
-				utils::ByteView view(bytes);
-				IntermediateBTHRecord record{};
-				record.key = view.read(keySize);
-				record.hidNextLevel = view.entry<HID>(4);
-				return record;
+				return IntermediateBTHRecord(bytes, keySize, HID::SizeNBytes);
 			}
 
 			static LeafBTHRecord asLeafBTHRecord(
@@ -788,12 +796,13 @@ namespace reader {
 				static_assert(std::is_move_assignable_v<BTreeHeap>, "BTreeHeap must be move assignable");
 				static_assert(std::is_copy_constructible_v<BTreeHeap>, "BTreeHeap must be copy constructible");
 				static_assert(std::is_copy_assignable_v<BTreeHeap>, "BTreeHeap must be copy assignable");
-				std::vector<types::byte_t> headerBytes = hn.getAllocation(bthHeaderHID);
+				const std::vector<types::byte_t> headerBytes = hn.getAllocation(bthHeaderHID);
 				m_header = readBTHHeader(headerBytes);
 
 				if (m_header.hidRoot.getHIDRaw() > 0) // If hidRoot is zero, the BTH is empty
 				{
 					m_records = readBTHRecords(
+						hn,
 						hn.getAllocation(m_header.hidRoot),
 						m_header.cbKey,
 						m_header.bIdxLevels,
@@ -825,17 +834,32 @@ namespace reader {
 				return header;
 			}
 
-			static std::vector<Record> readBTHRecords(
+			std::vector<Record> readBTHRecords(
+				const HN& hn,
 				const std::vector<types::byte_t>& bytes,
 				size_t keySize,
 				size_t bIdxLevels,
 				size_t dataSize = 0)
 			{
-				ASSERT((bIdxLevels == 0), "[ERROR] bIdxLevels != 0 [%i]", bIdxLevels);
 				const size_t rsize = keySize + dataSize;
 				const size_t nRecords = bytes.size() / rsize;
-				ASSERT( (bytes.size() % rsize == 0), "[ERROR] nRecords must be a mutiple of keySize + dataSize");
+				ASSERT((bytes.size() % rsize == 0), "[ERROR] nRecords must be a mutiple of keySize + dataSize");
 
+				if (bIdxLevels > 0)
+				{
+					ASSERT((dataSize == HID::SizeNBytes), "[ERROR]");
+					utils::ByteView view(bytes);
+					std::vector<IntermediateBTHRecord> inters = view.entries<IntermediateBTHRecord>(nRecords, rsize, keySize, dataSize);
+					std::vector<types::byte_t> totalBytes{};
+					for (const auto& inter : inters)
+					{
+						std::vector<types::byte_t> alloc = hn.getAllocation(inter.hidNextLevel);
+						totalBytes.insert(totalBytes.end(), alloc.begin(), alloc.end());
+					}
+					return readBTHRecords(hn, totalBytes, keySize, bIdxLevels - 1, dataSize);
+				}
+
+				ASSERT((bIdxLevels == 0), "[ERROR] bIdxLevels != 0 [%i]", bIdxLevels);
 				utils::ByteView view(bytes);
 				std::vector<Record> records = view.entries<Record>(nRecords, rsize, keySize, dataSize);
 				ASSERT((records.size() == nRecords), "[ERROR] Invalid size");
@@ -1241,6 +1265,10 @@ namespace reader {
 				ndb::SubNodeBTree* nestedSubNodeTree = parentSubNodeTree.getNestedSubNodeTree(dataTreeNID);
 				ASSERT((dataTree != nullptr), "[ERROR]");
 				LOGIF((nestedSubNodeTree == nullptr), "[ERROR] Nested SubNodeBTree was not found");
+				if (nestedSubNodeTree == nullptr)
+				{
+					return TableContext(HN::Init(dataTreeNID, std::move(*dataTree)), std::nullopt);
+				}
 				return TableContext(HN::Init(dataTreeNID, std::move(*dataTree)), std::move(*nestedSubNodeTree));
 			}
 
@@ -1280,7 +1308,8 @@ namespace reader {
 						}
 						else // Must be stored in a SubNodeBTree and Indexed using an NID
 						{
-							ndb::DataTree* datatree = m_subtree.getDataTree(core::NID(data));
+							ASSERT((m_subtree.has_value()), "[ERROR]");
+							ndb::DataTree* datatree = m_subtree->getDataTree(core::NID(data));
 							ASSERT((datatree != nullptr), "[ERROR]");
 							entry.data = datatree->combineDataBlocks();
 						}
@@ -1397,7 +1426,7 @@ namespace reader {
 		private:
 			explicit TableContext(
 				HN&& hn, 
-				ndb::SubNodeBTree&& subtree
+				std::optional<ndb::SubNodeBTree> subtree
 			)
 				: 
 				m_hn(std::move(hn)), 
@@ -1433,7 +1462,8 @@ namespace reader {
 
 			void _loadRowMatrixFromSubNodeTree() 
 			{
-				ndb::DataTree* datatree = m_subtree.getDataTree(m_header.hnidRows.as<core::NID>());
+				ASSERT((m_subtree.has_value()), "[ERROR]");
+				ndb::DataTree* datatree = m_subtree->getDataTree(m_header.hnidRows.as<core::NID>());
 				m_rowsPerBlock = datatree->sizeOfDataBlockData(0) / m_header.rgib.at(TCInfo::TCI_bm);
 				for (size_t i = 0; i < datatree->nDataBlocks(); i++)
 				{
@@ -1460,7 +1490,7 @@ namespace reader {
 			}
 
 		private:
-			ndb::SubNodeBTree m_subtree;
+			std::optional<ndb::SubNodeBTree> m_subtree;
 			uint64_t m_rowsPerBlock{0};
 			std::vector<RowBlock> m_rowBlocks;
 			std::vector<TCRowID> m_rowIDs;
