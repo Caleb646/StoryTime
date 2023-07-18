@@ -4,13 +4,24 @@ cmake_minimum_required(VERSION 3.21)
 project(pst_reader VERSION 0.1.0)
 
 set (CMAKE_CXX_STANDARD 20)
-set (SRC_FILES "src/main.cpp")
+#set (SRC_FILES "src/main.cpp")
 
 include(CTest)
+include(FetchContent)
 
-#if(BUILD_TESTING)
+set(ST_BUILD_TESTS on)
+
+if(ST_BUILD_TESTS)
   add_subdirectory(test)
-#endif()
+endif()
+
+
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.x
+)
+FetchContent_MakeAvailable(spdlog)
 
 set(MSVC_WARNINGS
     "/W4" # Baseline reasonable warnings
@@ -65,21 +76,10 @@ set(CLANG_WARNINGS
     -Wimplicit-fallthrough # warn on statements that fallthrough without an explicit annotation
 )
 
-
-
 add_executable(pst_reader ${SRC_FILES} "src/main.cpp")
 target_compile_options(pst_reader PUBLIC ${CLANG_WARNINGS})
-
-# target_compile_options(pst_reader PUBLIC ${MSVC_WARNINGS})
-# target_compile_options(pst_reader PUBLIC INTERFACE $<$<COMPILE_LANGUAGE:CXX>:${MSVC_WARNINGS}>)
-# target_compile_options(pst_reader PUBLIC /W4)
-
-
-#add_executable(tests "src/test.cpp")
-#target_compile_options(tests PUBLIC ${MSVC_WARNINGS})
-
-
 target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pst_reader PRIVATE spdlog::spdlog)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

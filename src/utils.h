@@ -7,6 +7,8 @@
 #include <format>
 #include <array>
 
+#include "spdlog/spdlog.h"
+
 #include "types.h"
 
 #ifndef READER_UTILS_H
@@ -30,6 +32,12 @@
 
 
 #define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
+
+#define ST_TRACE(...)         ::Hazel::Log::GetClientLogger()->trace(__VA_ARGS__)
+#define ST_INFO(...)          ::Hazel::Log::GetClientLogger()->info(__VA_ARGS__)
+#define ST_WARN(...)          ::Hazel::Log::GetClientLogger()->warn(__VA_ARGS__)
+#define ST_ERROR(...)         ::Hazel::Log::GetClientLogger()->error(__VA_ARGS__)
+#define ST_CRITICAL(...)      ::Hazel::Log::GetClientLogger()->critical(__VA_ARGS__)
 
 namespace reader::utils {
 
