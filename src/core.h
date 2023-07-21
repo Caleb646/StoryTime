@@ -55,20 +55,20 @@ namespace reader::core {
 
         [[nodiscard]] bool isInternal() const
         {
-            ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
             return (m_bid & 0x02U) > 0U;
         }
 
         [[nodiscard]] uint64_t getBidIndex() const
 		{
-            ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
 			return (m_bid >> 2U) << 2U;
             //return m_bid;
 		}
 
         [[nodiscard]] uint64_t getBidRaw() const
         {
-            ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
             return m_bid;
         }
 
@@ -225,7 +225,7 @@ namespace reader::core {
 
         explicit BREF(const std::vector<types::byte_t>& bytes)
         {
-            ASSERT((bytes.size() == 16), "[ERROR] BREF must be 16 bytes not %i", bytes.size());
+            STORYT_ASSERT((bytes.size() == 16), "[ERROR] BREF must be 16 bytes not %i", bytes.size());
             utils::ByteView view(bytes);
             bid = view.entry<BID>(8);
             ib = view.read<uint64_t>(8);
@@ -270,7 +270,7 @@ namespace reader::core {
 
         static Root Init(const std::vector<types::byte_t>& bytes)
         {
-            ASSERT((bytes.size() == 72), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == 72), "[ERROR]");
             utils::ByteView view(bytes);
             /*
             * dwReserved (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it.
@@ -317,7 +317,7 @@ namespace reader::core {
             const BREF BREFNBT = view.entry<BREF>(16); // utils::slice(bytes, 36, 52, 16);
             const BREF BREFBBT = view.entry<BREF>(16);  //utils::slice(bytes, 52, 68, 16);
             const uint8_t fAMapValid = view.read<uint8_t>(1); // utils::slice(bytes, 68, 69, 1, utils::toT_l<uint8_t>);
-            ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
+            STORYT_ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
             /*
             * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it.
             *  Creators of a new PST file MUST initialize this value to zero.

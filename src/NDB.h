@@ -46,7 +46,7 @@ namespace reader::ndb {
             auto computedSig = utils::ms::ComputeSig(bref.ib, bref.bid.getBidRaw());
             if (ptype == types::PType::NBT || ptype == types::PType::BBT)
             {
-                ASSERT((wSig == computedSig), "[ERROR] Page Sig [%i] != Computed Sig [%i]", wSig, computedSig);
+                STORYT_ASSERT((wSig == computedSig), "[ERROR] Page Sig [%i] != Computed Sig [%i]", wSig, computedSig);
             }
         }
 
@@ -58,7 +58,7 @@ namespace reader::ndb {
             wSig = view.read<uint16_t>(2);
             dwCRC = view.read<uint32_t>(4);
             bid = view.entry<core::BID>(8);
-            ASSERT((ptype == ptypeRepeat), "[ERROR]");
+            STORYT_ASSERT((ptype == ptypeRepeat), "[ERROR]");
         }
     };
 
@@ -80,13 +80,13 @@ namespace reader::ndb {
             : BlockTrailer(bytes)
         {
             auto computedSig = utils::ms::ComputeSig(bref.ib, bref.bid.getBidRaw());
-            ASSERT((wSig == computedSig),
+            STORYT_ASSERT((wSig == computedSig),
                 "[ERROR] Page Sig [%i] != Computed Sig [%i]", wSig, computedSig);
         }
 
         explicit BlockTrailer(const std::vector<types::byte_t>& bytes)
         {
-            ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
+            STORYT_ASSERT((bytes.size() == 16), "[ERROR] Block Trailer has to be 16 bytes not %i", bytes.size());
             utils::ByteView view(bytes);
             cb = view.read<uint16_t>(2);
             wSig = view.read<uint16_t>(2);
@@ -214,7 +214,7 @@ namespace reader::ndb {
             }	
             else
             {
-                ASSERT(false, "[ERROR] Invalid Type");
+                STORYT_ASSERT(false, "[ERROR] Invalid Type");
                 return EntryType();
             }
 		}
@@ -259,21 +259,21 @@ namespace reader::ndb {
 
         static BTPage Init(const std::vector<types::byte_t>& bytes, core::BREF bref, std::ifstream& file, int32_t parentCLevel = -1)
         {
-            ASSERT((bytes.size() == BTPage::size), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == BTPage::size), "[ERROR]");
             utils::ByteView view(bytes);
             return { bytes, PageTrailer(view.takeLast(16), bref), file, parentCLevel };
         }
 
         static BTPage Init(const std::vector<types::byte_t>& bytes, core::BREF bref, int32_t parentCLevel = -1)
         {
-            ASSERT((bytes.size() == BTPage::size), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == BTPage::size), "[ERROR]");
             utils::ByteView view(bytes);
             return { bytes, PageTrailer(view.takeLast(16), bref), parentCLevel };
         }
 
         static BTPage Init(const std::vector<types::byte_t>& bytes, int32_t parentCLevel = -1)
         {
-            ASSERT((bytes.size() == BTPage::size), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == BTPage::size), "[ERROR]");
             utils::ByteView view(bytes);
             return { bytes, PageTrailer(view.takeLast(16)), parentCLevel };
         }
@@ -320,13 +320,13 @@ namespace reader::ndb {
             // reset to beginning of bytes to read the entries
             rgentries = view.setStart(0).entries<Entry>(nEntries, singleEntrySize);
 
-            ASSERT((trailer.ptype == types::PType::BBT || trailer.ptype == types::PType::NBT), "[ERROR] Invalid ptype for pagetrailer");
-            ASSERT((nEntries <= maxNEntries), "[ERROR] Invalid cEnt %i", nEntries);
-            ASSERT((dwPadding == 0), "[ERROR] dwPadding should be 0 not %i", dwPadding);
-            ASSERT((nEntries == rgentries.size()), "[ERROR]");
+            STORYT_ASSERT((trailer.ptype == types::PType::BBT || trailer.ptype == types::PType::NBT), "[ERROR] Invalid ptype for pagetrailer");
+            STORYT_ASSERT((nEntries <= maxNEntries), "[ERROR] Invalid cEnt %i", nEntries);
+            STORYT_ASSERT((dwPadding == 0), "[ERROR] dwPadding should be 0 not %i", dwPadding);
+            STORYT_ASSERT((nEntries == rgentries.size()), "[ERROR]");
             if (parentCLevel != -1)
             {
-                ASSERT((parentCLevel - 1 == cLevel),
+                STORYT_ASSERT((parentCLevel - 1 == cLevel),
                     "[ERROR] SubBTPage cLevel [%i] must be smaller than ParentBTPage cLevel [%i]", cLevel, parentCLevel);
             }
         }
@@ -350,7 +350,7 @@ namespace reader::ndb {
                     // the NID Type and NID Index.
                     if (nbt.nid.getNIDIndex() == nid.getNIDIndex())
                     {
-                        ASSERT(!entries.contains(nbt.nid.getNIDType()), "Duplicate NID Type found in NBT");
+                        STORYT_ASSERT(!entries.contains(nbt.nid.getNIDType()), "Duplicate NID Type found in NBT");
                         entries[nbt.nid.getNIDType()] = nbt;
                     }
                 }
@@ -412,7 +412,7 @@ namespace reader::ndb {
         template<typename T>
         static size_t getEntryType(types::PType pagePtype, T cLevel)
         {
-            ASSERT((pagePtype != types::PType::INVALID), 
+            STORYT_ASSERT((pagePtype != types::PType::INVALID), 
                 "[ERROR] Pagetrailer was not setup properly. types::PType is set to INVALID .");
             if (cLevel == 0 && pagePtype == types::PType::NBT) // NBTENTRY 
             {
@@ -429,7 +429,7 @@ namespace reader::ndb {
                 return BBTEntry::id();
             }
 
-            ASSERT(false, "[ERROR] Invalid types::PType for BTPage %i with cLevel %i", 
+            STORYT_ASSERT(false, "[ERROR] Invalid types::PType for BTPage %i with cLevel %i", 
                 static_cast<uint32_t>(pagePtype), cLevel);
             return 0;
         }
@@ -471,7 +471,7 @@ namespace reader::ndb {
             }    
             else
             {
-                ASSERT(false, "[ERROR] Invalid EntryType");
+                STORYT_ASSERT(false, "[ERROR] Invalid EntryType");
                 return false;
             }
 		}
@@ -490,8 +490,8 @@ namespace reader::ndb {
             bool _verify(const BTPage& page) const
             {
                 types::PType ptype = trailer.ptype;
-                ASSERT((page.trailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
-                ASSERT((page.nEntries == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
+                STORYT_ASSERT((page.trailer.ptype == ptype), "[ERROR] Subpage has different ptype than parent page.");
+                STORYT_ASSERT((page.nEntries == page.rgentries.size()), "[ERROR] Subpage has different number of entries than cEnt.");
                 //ASSERT(page.getEntryType(), -1), "[ERROR] Subpage has invalid entry type.");
                 //for (const auto& entry : page.rgentries)
                 //{
@@ -512,7 +512,7 @@ namespace reader::ndb {
 
         static DataBlock Init(const std::vector<types::byte_t>& bytes, core::BREF bref)
         {
-            ASSERT(!bref.bid.isInternal(), "[ERROR] A Data Block can NOT be marked as Internal");
+            STORYT_ASSERT(!bref.bid.isInternal(), "[ERROR] A Data Block can NOT be marked as Internal");
             utils::ByteView view(bytes);
             return DataBlock( bytes, BlockTrailer(view.takeLast(16), bref) );
         }
@@ -522,10 +522,10 @@ namespace reader::ndb {
         {
             utils::ByteView view(bytes);
             std::vector<types::byte_t> data = view.read(trailer.cb);
-            ASSERT((data.size() == trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
+            STORYT_ASSERT((data.size() == trailer.cb), "[ERROR] blockBytes.size() != trailer.cb");
 
             const size_t dwCRC = utils::ms::ComputeCRC(0, data.data(), static_cast<uint32_t>(trailer.cb));
-            ASSERT((trailer.dwCRC == dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
+            STORYT_ASSERT((trailer.dwCRC == dwCRC), "[ERROR] trailer.dwCRC != dwCRC");
             // TODO: The data block is not always encrypted or could be encrypted with a different algorithm
             utils::ms::CryptPermute(
                 data.data(),
@@ -564,7 +564,7 @@ namespace reader::ndb {
 
         static XBlock Init(const std::vector<types::byte_t>& bytes, core::BREF bref)
         {
-            ASSERT(bref.bid.isInternal(), "[ERROR] A XBlock can NOT be marked as Internal");
+            STORYT_ASSERT(bref.bid.isInternal(), "[ERROR] A XBlock can NOT be marked as Internal");
             utils::ByteView view(bytes);
             return XBlock( bytes, BlockTrailer(view.takeLast(16), bref) );
         }
@@ -579,9 +579,9 @@ namespace reader::ndb {
             lcbTotal = view.read<uint32_t>(4);
             rgbid = view.entries<core::BID>(nBids, 8);
 
-            ASSERT((btype == 0x01), "[ERROR] btype for XBlock should be 0x01 not %X", btype);
-            ASSERT((cLevel == 0x01), "[ERROR] cLevel for XBlock should be 0x01 not %X", cLevel);
-            ASSERT((rgbid.size() == nBids), "[ERROR]");
+            STORYT_ASSERT((btype == 0x01), "[ERROR] btype for XBlock should be 0x01 not %X", btype);
+            STORYT_ASSERT((cLevel == 0x01), "[ERROR] cLevel for XBlock should be 0x01 not %X", cLevel);
+            STORYT_ASSERT((rgbid.size() == nBids), "[ERROR]");
         }
     };
 
@@ -612,7 +612,7 @@ namespace reader::ndb {
 
         static XXBlock Init(const std::vector<types::byte_t>& bytes, core::BREF bref)
         {
-            ASSERT(bref.bid.isInternal(), "[ERROR] A XBlock can NOT be marked as Internal");
+            STORYT_ASSERT(bref.bid.isInternal(), "[ERROR] A XBlock can NOT be marked as Internal");
             utils::ByteView view(bytes);
             return XXBlock(bytes, BlockTrailer(view.takeLast(16), bref));
         }
@@ -627,9 +627,9 @@ namespace reader::ndb {
             lcbTotal = view.read<uint32_t>(4);
             rgbid = view.entries<core::BID>(nBids, 8);
 
-            ASSERT((btype == 0x01), "[ERROR] btype for XXBlock should be 0x01 not [%X]", btype);
-            ASSERT((cLevel == 0x02), "[ERROR] cLevel for XXBlock should be 0x02 not [%X]", cLevel);
-            ASSERT((rgbid.size() == nBids), "[ERROR]");
+            STORYT_ASSERT((btype == 0x01), "[ERROR] btype for XXBlock should be 0x01 not [%X]", btype);
+            STORYT_ASSERT((cLevel == 0x02), "[ERROR] cLevel for XXBlock should be 0x02 not [%X]", cLevel);
+            STORYT_ASSERT((rgbid.size() == nBids), "[ERROR]");
         }
     };
 
@@ -650,25 +650,25 @@ namespace reader::ndb {
 
         [[nodiscard]] size_t nDataBlocks() const
         {
-            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
+            STORYT_ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.size();
         }
 
         [[nodiscard]] size_t sizeOfDataBlockData(size_t dataBlockIdx) const
         {
-            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
+            STORYT_ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.at(dataBlockIdx).data.size();
         }
 
         [[nodiscard]] const DataBlock& at(size_t idx) const
         {
-            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
+            STORYT_ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             return m_dataBlocks.at(idx);
         }
 
         [[nodiscard]] std::vector<types::byte_t> combineDataBlocks()
         {
-            ASSERT(m_DataBlocksAreSetup, "[ERROR]");
+            STORYT_ASSERT(m_DataBlocksAreSetup, "[ERROR]");
             const size_t maxBlockSize = 8192U;
             std::vector<types::byte_t> res;
             res.reserve(nDataBlocks() * maxBlockSize);
@@ -706,11 +706,11 @@ namespace reader::ndb {
             utils::ByteView view(blockBytes);
             BlockTrailer trailer(view.takeLast(blockTrailerSize), m_firstBlockBREF);
 
-            ASSERT((trailer.bid == m_firstBlockBREF.bid), 
+            STORYT_ASSERT((trailer.bid == m_firstBlockBREF.bid), 
                 "[ERROR] Bids should match");
-            ASSERT((blockSize - (blockTrailerSize + offset) == trailer.cb),
+            STORYT_ASSERT((blockSize - (blockTrailerSize + offset) == trailer.cb),
                 "[ERROR] Given BlockSize [%i] != Trailer BlockSize [%i]", blockSize, trailer.cb);
-            ASSERT((m_sizeofFirstBlockData == trailer.cb),
+            STORYT_ASSERT((m_sizeofFirstBlockData == trailer.cb),
                 "[ERROR] Given sizeofBlockData [%i] != Trailer BlockSize [%i]", m_sizeofFirstBlockData, trailer.cb);
 
             if (!trailer.bid.isInternal()) // Data Block
@@ -731,13 +731,13 @@ namespace reader::ndb {
                 }
                 else
                 {
-                    ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
+                    STORYT_ASSERT(false, "[ERROR] Invalid btype must 0x01 or 0x02 not [%X]", btype);
                 }
                 _flush(); // only flush when there are X or XX Blocks
             }
             else // Invalid Block Type
             {
-                ASSERT(false, "[ERROR] Unknown block type");
+                STORYT_ASSERT(false, "[ERROR] Unknown block type");
             }
             m_DataBlocksAreSetup = true;
             return *this;
@@ -755,9 +755,9 @@ namespace reader::ndb {
             // The block size is the smallest multiple of 64 that can hold both the data and the block trailer.
             const size_t blockSize = (sizeofBlockData + blockTrailerSize) + offset;
 
-            ASSERT((blockSize % 64 == 0),
+            STORYT_ASSERT((blockSize % 64 == 0),
                 "[ERROR] Block Size must be a mutiple of 64");
-            ASSERT((blockSize <= 8192),
+            STORYT_ASSERT((blockSize <= 8192),
                 "[ERROR] Block Size must less than or equal to the max blocksize of 8192");
             return { blockSize, offset };
         }
@@ -808,7 +808,7 @@ namespace reader::ndb {
 
         size_t TotalDataBlockFileBytes_()
         {
-            ASSERT((DataBlocksAreStoredContiguously_()), "[ERROR]");
+            STORYT_ASSERT((DataBlocksAreStoredContiguously_()), "[ERROR]");
             size_t nBytes{ 0 };
             for (const auto& entry : m_dataBlockBBTs)
             {
@@ -872,7 +872,7 @@ namespace reader::ndb {
 
         explicit SLEntry(const std::vector<types::byte_t>& bytes)
         {
-            ASSERT((bytes.size() == 24), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == 24), "[ERROR]");
             utils::ByteView view(bytes);
             nid = view.entry<core::NID>(8);//core::NID(utils::slice(bytes, 0, 8, 8));
             bidData = view.entry<core::BID>(8);//core::BID(utils::slice(bytes, 8, 16, 8));
@@ -894,7 +894,7 @@ namespace reader::ndb {
 
         explicit SIEntry(const std::vector<types::byte_t>& bytes)
         {
-            ASSERT((bytes.size() == 16), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == 16), "[ERROR]");
             utils::ByteView view(bytes);
             nid = view.entry<core::NID>(8);
             bid = view.entry<core::BID>(8);
@@ -921,7 +921,7 @@ namespace reader::ndb {
 
         static SLBlock Init(const std::vector<types::byte_t>& bytes, core::BREF bref)
         {
-            ASSERT(bref.bid.isInternal(), "[ERROR]");
+            STORYT_ASSERT(bref.bid.isInternal(), "[ERROR]");
             utils::ByteView view(bytes);
             return SLBlock(bytes, BlockTrailer(view.takeLast(16), bref));
         }
@@ -936,9 +936,9 @@ namespace reader::ndb {
             dwPadding = view.read<uint32_t>(4); //utils::slice(bytes, 4, 8, 2, utils::toT_l<uint32_t>);
             entries = view.entries<SLEntry>(cEnt, 24);
 
-            ASSERT((btype == 0x02), "[ERROR]");
-            ASSERT((cLevel == 0x00), "[ERROR]");
-            ASSERT((cEnt != 0), "[ERROR]");
+            STORYT_ASSERT((btype == 0x02), "[ERROR]");
+            STORYT_ASSERT((cLevel == 0x00), "[ERROR]");
+            STORYT_ASSERT((cEnt != 0), "[ERROR]");
         }
     };
 
@@ -960,7 +960,7 @@ namespace reader::ndb {
 
         static SIBlock Init(const std::vector<types::byte_t>& bytes, core::BREF bref)
         {
-            ASSERT(bref.bid.isInternal(), "[ERROR]");
+            STORYT_ASSERT(bref.bid.isInternal(), "[ERROR]");
             utils::ByteView view(bytes);
             return SIBlock(bytes, BlockTrailer(view.takeLast(16), bref));
         }
@@ -974,8 +974,8 @@ namespace reader::ndb {
             cEnt = view.read<uint16_t>(2);
             dwPadding = view.read<uint32_t>(4);
             entries = view.entries<SIEntry>(cEnt, 16);
-            ASSERT((btype == 0x02), "[ERROR]");
-            ASSERT((cLevel == 0x01), "[ERROR]");
+            STORYT_ASSERT((btype == 0x02), "[ERROR]");
+            STORYT_ASSERT((cLevel == 0x01), "[ERROR]");
         }
     };
 
@@ -1002,7 +1002,7 @@ namespace reader::ndb {
                 }
                 else // Encountered Invalid Block Type
                 {
-                    ASSERT(false, "[ERROR] Unknown SubNode Type");
+                    STORYT_ASSERT(false, "[ERROR] Unknown SubNode Type");
                 }
 
                 m_subtrees.reserve(m_slentries.size());
@@ -1011,8 +1011,8 @@ namespace reader::ndb {
                 for (const SLEntry& slentry : m_slentries)
                 {
                     const uint32_t nidID = slentry.nid.getNIDRaw();
-                    ASSERT(!m_subtrees.contains(nidID), "[ERROR] Duplicate entry in Nested SubNodeBTree Map");
-                    ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry In DataTree Map");
+                    STORYT_ASSERT(!m_subtrees.contains(nidID), "[ERROR] Duplicate entry in Nested SubNodeBTree Map");
+                    STORYT_ASSERT(!m_datatrees.contains(nidID), "[ERROR] Duplicate entry In DataTree Map");
                     if (slentry.bidSub.getBidRaw() != 0) // theres a nested subnode btree
                     {
                         LOG("[WARN] A nested SubNodeBTree was created");
@@ -1112,8 +1112,8 @@ namespace reader::ndb {
                 const size_t start = entries.at(i - 1).bref.ib;
                 const size_t end = entries.at(i).bref.ib;
                 const size_t expectedSize = calcBlockAlignedSize(entries.at(i - 1).bref.ib);
-                ASSERT((start < end), "[ERROR]");
-                ASSERT((end - start == expectedSize), "[ERROR]");
+                STORYT_ASSERT((start < end), "[ERROR]");
+                STORYT_ASSERT((end - start == expectedSize), "[ERROR]");
             }
             size_t nBytes{ 0 };
             for (const BBTEntry& bbt : entries)
@@ -1187,21 +1187,21 @@ namespace reader::ndb {
             }			
             else
             {
-                ASSERT(false, "[ERROR] Invalid IDType");
+                STORYT_ASSERT(false, "[ERROR] Invalid IDType");
             }
 		}
 
         bool verify()
         {
-            ASSERT(m_rootNBT.get<NBTEntry>(core::NID_MESSAGE_STORE).has_value(),
+            STORYT_ASSERT(m_rootNBT.get<NBTEntry>(core::NID_MESSAGE_STORE).has_value(),
                 "[ERROR] Cannot be more than 1 Message Store");
-            ASSERT((m_rootNBT.get<NBTEntry>(core::NID_NAME_TO_ID_MAP).has_value()),
+            STORYT_ASSERT((m_rootNBT.get<NBTEntry>(core::NID_NAME_TO_ID_MAP).has_value()),
                 "[ERROR]");
             //ASSERT((m_rootNBT.get<NBTEntry>(core::NID_NORMAL_FOLDER_TEMPLATE) <= 1),
             //    "[ERROR]");
             //ASSERT((m_rootNBT.get<NBTEntry>(core::NID_SEARCH_FOLDER_TEMPLATE) <= 1),
             //    "[ERROR]");
-            ASSERT((m_rootNBT.get<NBTEntry>(core::NID_ROOT_FOLDER).has_value()),
+            STORYT_ASSERT((m_rootNBT.get<NBTEntry>(core::NID_ROOT_FOLDER).has_value()),
                 "[ERROR]");
             //ASSERT((m_rootNBT.get<NBTEntry>(core::NID_SEARCH_MANAGEMENT_QUEUE) <= 1),
             //    "[ERROR]");

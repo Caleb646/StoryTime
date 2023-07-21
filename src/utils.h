@@ -6,38 +6,48 @@
 #include <fstream>
 #include <format>
 #include <array>
+#include <stdexcept>
 
-#include "spdlog/spdlog.h"
 
-#include "types.h"
+#define STORYT_ASSERT(cond, ...) assert(cond)
+#define STORYT_VERIFY(cond, ...) if(!cond) throw std::runtime_error("")
+
+#if STORYT_BUILD_SPDLOG_ == true
+    #pragma info "Compiling with SPDLog"
+    #include <spdlog/spdlog.h>
+    #define LOG(fmt, ...) reader::utils::old_log(__LINE__, fmt, __VA_ARGS__)
+    #define LOGIF(cond, fmt, ...) if(cond) LOG(fmt, __VA_ARGS__)
+    #define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
+    #define STORYT_TRACE(...) spdlog::trace(__VA_ARGS__)
+    #define STORYT_INFO(...) spdlog::info(__VA_ARGS__)
+    #define STORYT_WARN(...) spdlog::warn(__VA_ARGS__)
+    #define STORYT_ERROR(...) spdlog::error(__VA_ARGS__)
+    #define STORTY_CRITICAL(...) spdlog::critical(__VA_ARGS__)
+    
+    #define STORYT_WARNIF(cond, ...) if(cond) spdlog::warn(__VA_ARGS__)
+    #define STORYT_ERRORIF(cond, ...) if(cond) spdlog::error(__VA_ARGS__)
+#else
+    #pragma info "Compiling with OUT SPDLog"
+    #define LOG(fmt, ...) reader::utils::old_log(__LINE__, fmt, __VA_ARGS__)
+    #define LOGIF(con, fmt, ...) if(con) LOG(fmt, __VA_ARGS__)
+    #define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
+    #define STORYT_TRACE(...)
+    #define STORYT_INFO(...)
+    #define STORYT_WARN(...)
+    #define STORYT_ERROR(...)
+    #define STORTY_CRITICAL(...)
+
+    #define STORYT_WARNIF(cond, ...)
+    #define STORYT_ERRORIF(cond, ...)
+#endif
 
 #ifndef READER_UTILS_H
 #define READER_UTILS_H
 
-#define LOG(fmt, ...) reader::utils::old_log(__LINE__, fmt, __VA_ARGS__)
-
-#define LOGIF(con, fmt, ...) do {\
-								if(con)\
-									LOG(fmt, __VA_ARGS__);\
-							}\
-						    while(false);\
+#include "types.h"
 
 
-#define ASSERT(con, fmt, ...) do {\
-                                if(!con)\
-                                    LOG(fmt, __VA_ARGS__);\
-                                    assert(con);\
-                            }\
-                         while(false);\
 
-
-#define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
-
-#define ST_TRACE(...)         ::Hazel::Log::GetClientLogger()->trace(__VA_ARGS__)
-#define ST_INFO(...)          ::Hazel::Log::GetClientLogger()->info(__VA_ARGS__)
-#define ST_WARN(...)          ::Hazel::Log::GetClientLogger()->warn(__VA_ARGS__)
-#define ST_ERROR(...)         ::Hazel::Log::GetClientLogger()->error(__VA_ARGS__)
-#define ST_CRITICAL(...)      ::Hazel::Log::GetClientLogger()->critical(__VA_ARGS__)
 
 namespace reader::utils {
 
@@ -133,7 +143,7 @@ namespace reader::utils {
         To res = static_cast<To>(f);
         if constexpr (std::is_integral_v<From> && std::is_integral_v<To>)
         {
-            ASSERT(std::cmp_equal(res, f), "[ERROR] Invalid Cast");
+            STORYT_ASSERT(std::cmp_equal(res, f), "[ERROR] Invalid Cast");
             return res;
         }  
         else
@@ -163,7 +173,7 @@ namespace reader::utils {
         case 0x86:
             return types::PType::DL;
         default:
-            ASSERT(false, "[ERROR] Invalid PType {}", ptype);
+            STORYT_ASSERT(false, "[ERROR] Invalid PType {}", ptype);
             return types::PType::INVALID;
         }
     }
@@ -328,22 +338,22 @@ namespace reader::utils {
             case types::PropertyType::String                 : return PTInfo{ false, false, 2 }; // Null terminated & variable length structure with a fixed entry size of 2 bytes
                 
             case types::PropertyType::String8: // UTF-8 String (Variable Length String)
-                ASSERT(false, "PtypString8 is not implemented yet");
+                STORYT_ASSERT(false, "PtypString8 is not implemented yet");
                 return PTInfo{ false, false, 64 }; // Null terminated & variable length structure and only a single n byte entry
                 
             case types::PropertyType::Time                   : return PTInfo{ false, true, 8 };
             case types::PropertyType::Guid                   : return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::ServerId:
-                ASSERT(false, "PtypServerId is not implemented yet");
+                STORYT_ASSERT(false, "PtypServerId is not implemented yet");
                 return PTInfo{ false, true, 16 }; // variable length structure and only a single n byte entry
                 
             case types::PropertyType::Restriction: 
-                ASSERT(false, "PtypRestriction is not implemented yet");
+                STORYT_ASSERT(false, "PtypRestriction is not implemented yet");
                 return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::RuleAction: 
-                ASSERT(false, "PtypRuleAction is not implemented yet");
+                STORYT_ASSERT(false, "PtypRuleAction is not implemented yet");
                 return PTInfo{ false, true, 16 }; // variable structure size and variable entry size
                 
             case types::PropertyType::Binary                 : return PTInfo{ false, false, 0 };
@@ -357,31 +367,31 @@ namespace reader::utils {
             case types::PropertyType::MultipleString         : return PTInfo{ true, true, 2 };
                 
             case types::PropertyType::MultipleString8: 
-                ASSERT(false, "PtypMultipleString8 is not implemented yet");
+                STORYT_ASSERT(false, "PtypMultipleString8 is not implemented yet");
                 return PTInfo{ true, false, 0 };
                 
             case types::PropertyType::MultipleTime:
-                ASSERT(false, "PtypMultipleTime is not implemented yet");
+                STORYT_ASSERT(false, "PtypMultipleTime is not implemented yet");
                 return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::MultipleGuid: 
-                ASSERT(false, "PtypMultipleGuid is not implemented yet");
+                STORYT_ASSERT(false, "PtypMultipleGuid is not implemented yet");
                 return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::MultipleBinary         : return PTInfo{ true, false, 0 };
                 
             case types::PropertyType::Unspecified:
-                ASSERT(false, "PtypUnspecified is not implemented yet");
+                STORYT_ASSERT(false, "PtypUnspecified is not implemented yet");
                 return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::Null: 
-                ASSERT(false, "PtypNull is not implemented yet");
+                STORYT_ASSERT(false, "PtypNull is not implemented yet");
                 return PTInfo{ false, true, 16 };
                 
             case types::PropertyType::Object                 : return PTInfo{ false, false, 0 };
                
             default: 
-                ASSERT(false, "Unknown Property Type");
+                STORYT_ASSERT(false, "Unknown Property Type");
                 return PTInfo{ false, false, 0 };
         }
     }
@@ -423,7 +433,7 @@ namespace reader::utils {
         case 0x0001: return types::PropertyType::Null                ;
         case 0x000D: return types::PropertyType::Object              ;
         default:
-            ASSERT(false, "Unknown Property Type");
+            STORYT_ASSERT(false, "Unknown Property Type");
             return types::PropertyType::Null;
         }
     }
@@ -466,7 +476,7 @@ namespace reader::utils {
         case 0x0001: return "PtypNull;                ";
         case 0x000D: return "PtypObject;              ";
         default:
-            ASSERT(false, "Unknown Property Type");
+            STORYT_ASSERT(false, "Unknown Property Type");
             return "Unknown Property Type";
         }
     }
@@ -567,7 +577,7 @@ namespace reader::utils {
         {
             bytes = pad(b, sizeof(T) - b.size());
         }
-        ASSERT((sizeof(T) == bytes.size()), "[ERROR] toT_l T not [%i].", sizeof(T));
+        STORYT_ASSERT((sizeof(T) == bytes.size()), "[ERROR] toT_l T not [%i].", sizeof(T));
         if constexpr (sizeof(T) == 1)
         {
             return static_cast<T>
@@ -619,7 +629,7 @@ namespace reader::utils {
         }
         else 
         {
-            ASSERT(false, "[ERROR] Bytes could not be converted");
+            STORYT_ASSERT(false, "[ERROR] Bytes could not be converted");
             return T(-1);
         }
     }
@@ -638,7 +648,7 @@ namespace reader::utils {
     template<typename T>
     std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)
     {
-        ASSERT((end - start == size), "[ERROR] Invalid slice size [%i] != [%i]", end - start, size);
+        STORYT_ASSERT((end - start == size), "[ERROR] Invalid slice size [%i] != [%i]", end - start, size);
         return std::vector<types::byte_t>(v.begin() + start, v.begin() + end);
     }
 
@@ -653,7 +663,7 @@ namespace reader::utils {
         std::ifstream& file, 
         T numBytes)
     {
-        ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
         std::vector<types::byte_t> res(numBytes, '\0');
         file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
         return res;
@@ -673,11 +683,11 @@ namespace reader::utils {
         uint64_t position,
         size_t numBytes)
     {
-        ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
         std::vector<types::byte_t> res(numBytes, '\0');
         file.seekg(position, std::ios::beg);
         file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
-        ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
         return res;
     }
 
@@ -690,7 +700,7 @@ namespace reader::utils {
         explicit ByteView(const std::vector<types::byte_t>& bytes, size_t start)
             : m_bytes(bytes), m_start(start) 
         {
-            ASSERT((start < bytes.size()), "[ERROR]");
+            STORYT_ASSERT((start < bytes.size()), "[ERROR]");
         }
         ByteView(const ByteView&) = delete;
         ByteView(ByteView&&) = delete;
@@ -768,7 +778,7 @@ namespace reader::utils {
         template<typename RetType = std::vector<types::byte_t>>
         RetType takeLast(size_t nBytes)
         {
-            ASSERT((nBytes <= (m_bytes.size() - m_start)), "[ERROR]");
+            STORYT_ASSERT((nBytes <= (m_bytes.size() - m_start)), "[ERROR]");
             const size_t offset = m_bytes.size() - m_start - nBytes;
             skip(offset);
             if constexpr (std::is_same_v<RetType, std::vector<types::byte_t>>)

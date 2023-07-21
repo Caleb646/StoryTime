@@ -27,7 +27,7 @@ namespace reader
 		public:
 			static MessageObject Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
+				STORYT_ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
 				const auto nbt = ndb->get(nid);
 				ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.value().bidSub);
 				/*
@@ -39,13 +39,13 @@ namespace reader
 				LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
 				ltp::TableContext recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
 
-				ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
 				//ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
-				ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
+				STORYT_ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
 
 				for (const auto& [propID, prop] : pc)
 				{
@@ -53,26 +53,26 @@ namespace reader
 						//prop.id, static_cast<uint32_t>(prop.propType), prop.data.size());
 				}
 
-				ASSERT((recip.hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::AddressType, types::PropertyType::String)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::AddressType, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)), "[ERROR]");
 
-				ASSERT((recip.hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((recip.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((recip.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
 				const ltp::TColDesc ltpRowIdCol = recip.getCol(types::PidTagType::LtpRowId);
 				const ltp::TColDesc ltpRowVerCol = recip.getCol(types::PidTagType::LtpRowVer);
-				ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
-				ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+				STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+				STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 
 				//const auto entries = recip.getRow(recip.rowIDs()[0]);
 
@@ -137,11 +137,11 @@ namespace reader
 			static Folder Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
 				std::unordered_map<types::NIDType, ndb::NBTEntry> nbtentries = ndb->all(nid);
-				ASSERT((nbtentries.size() == 4), "[ERROR] A Folder must be composed of 4 Parts");
-				ASSERT((nbtentries.count(types::NIDType::NORMAL_FOLDER) == 1), "[ERROR] A Folder must have a NORMAL_FOLDER");
-				ASSERT((nbtentries.count(types::NIDType::HIERARCHY_TABLE) == 1), "[ERROR] A Folder must have a HIERARCHY_TABLE");
-				ASSERT((nbtentries.count(types::NIDType::CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a CONTENTS_TABLE");
-				ASSERT((nbtentries.count(types::NIDType::ASSOC_CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a ASSOC_CONTENTS_TABLE");
+				STORYT_ASSERT((nbtentries.size() == 4), "[ERROR] A Folder must be composed of 4 Parts");
+				STORYT_ASSERT((nbtentries.count(types::NIDType::NORMAL_FOLDER) == 1), "[ERROR] A Folder must have a NORMAL_FOLDER");
+				STORYT_ASSERT((nbtentries.count(types::NIDType::HIERARCHY_TABLE) == 1), "[ERROR] A Folder must have a HIERARCHY_TABLE");
+				STORYT_ASSERT((nbtentries.count(types::NIDType::CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a CONTENTS_TABLE");
+				STORYT_ASSERT((nbtentries.count(types::NIDType::ASSOC_CONTENTS_TABLE) == 1), "[ERROR] A Folder must have a ASSOC_CONTENTS_TABLE");
 
 				ltp::PropertyContext normal = ltp::PropertyContext::Init(nbtentries.at(types::NIDType::NORMAL_FOLDER).nid, ndb);
 				ltp::TableContext hier = ltp::TableContext::Init(nbtentries.at(types::NIDType::HIERARCHY_TABLE).nid, ndb);
@@ -149,10 +149,10 @@ namespace reader
 				ltp::TableContext assoc = ltp::TableContext::Init(nbtentries.at(types::NIDType::ASSOC_CONTENTS_TABLE).nid, ndb);
 
 
-				ASSERT((normal.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-				ASSERT((normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
-				ASSERT((normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+				STORYT_ASSERT((normal.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+				STORYT_ASSERT((normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
 				LOG("[INFO] Folder Name: [%s]",
 					normal.getProperty<ltp::PTString>(types::PidTagType::DisplayName).data.c_str());
 
@@ -160,54 +160,54 @@ namespace reader
 
 					 //TODO: this assert doesnt pass. The PidTagType is found but it has the PropType of PTBinary not PTInt32
 					//ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
 					// TODO: this assert doesnt pass. Pid Tag matches but it has PropType of PTstring
 					//ASSERT((hier.hasCol(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
 					const ltp::TColDesc ltpRowIdCol = hier.getCol(types::PidTagType::LtpRowId);
 					const ltp::TColDesc ltpRowVerCol = hier.getCol(types::PidTagType::LtpRowVer);
-					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
-					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+					STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+					STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 				}
 
 				{
-					ASSERT((contents.hasCol(types::PidTagType::Importance, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ClientSubmitTime, types::PropertyType::Time)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::SentRepresentingNameW, types::PropertyType::String)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageToMe, types::PropertyType::Boolean)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageCcMe, types::PropertyType::Boolean)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ConversationTopicW, types::PropertyType::String)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ConversationIndex, types::PropertyType::Binary)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::Importance, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ClientSubmitTime, types::PropertyType::Time)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::SentRepresentingNameW, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageToMe, types::PropertyType::Boolean)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageCcMe, types::PropertyType::Boolean)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ConversationTopicW, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ConversationIndex, types::PropertyType::Binary)), "[ERROR]");
 
-					ASSERT((contents.hasCol(types::PidTagType::DisplayCcW, types::PropertyType::String)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::DisplayToW, types::PropertyType::String)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageDeliveryTime, types::PropertyType::Time)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::DisplayCcW, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::DisplayToW, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageDeliveryTime, types::PropertyType::Time)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
 
 					//ASSERT((contents.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromVersionhistory, types::PropertyType::Binary)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
-					ASSERT((contents.hasCol(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromVersionhistory, types::PropertyType::Binary)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
+					STORYT_ASSERT((contents.hasCol(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
 
 					const ltp::TColDesc ltpRowIdCol = hier.getCol(types::PidTagType::LtpRowId);
 					const ltp::TColDesc ltpRowVerCol = hier.getCol(types::PidTagType::LtpRowVer);
-					ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
-					ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+					STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+					STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 				}
 				return Folder(nid, ndb, std::move(normal), std::move(hier), std::move(contents), std::move(assoc));
 			}
@@ -298,11 +298,11 @@ namespace reader
 
 			EntryID(const std::vector <types::byte_t >& data, const std::vector<types::byte_t>& pidTagRecordKey)
 			{
-				ASSERT((data.size() == 24ULL), "EntryID data size is not 24 bytes");
+				STORYT_ASSERT((data.size() == 24ULL), "EntryID data size is not 24 bytes");
 				rgbFlags = utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>);
 				uuid = utils::slice(data, 4, 20, 16);
 				nid = core::NID(utils::slice(data, 20, 24, 4));
-				ASSERT((uuid == pidTagRecordKey), "EntryID uuid does not match pidTagRecordKey");
+				STORYT_ASSERT((uuid == pidTagRecordKey), "EntryID uuid does not match pidTagRecordKey");
 			}
 		};
 
@@ -353,11 +353,11 @@ namespace reader
 
 			void _init()
 			{
-				ASSERT((m_pc.valid(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((m_pc.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-				ASSERT((m_pc.valid(types::PidTagType::IpmSubTreeEntryId, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((m_pc.valid(types::PidTagType::IpmWastebasketEntryId, types::PropertyType::Binary)), "[ERROR]");
-				ASSERT((m_pc.valid(types::PidTagType::FinderEntryId, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((m_pc.valid(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((m_pc.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+				STORYT_ASSERT((m_pc.valid(types::PidTagType::IpmSubTreeEntryId, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((m_pc.valid(types::PidTagType::IpmWastebasketEntryId, types::PropertyType::Binary)), "[ERROR]");
+				STORYT_ASSERT((m_pc.valid(types::PidTagType::FinderEntryId, types::PropertyType::Binary)), "[ERROR]");
 				LOG("[INFO] Message Store Display Name: [%s]", 
 					as<ltp::PTString>(types::PidTagType::DisplayName).data.c_str());
 			}

@@ -1,27 +1,30 @@
 
 cmake_minimum_required(VERSION 3.21)
-
 project(pst_reader VERSION 0.1.0)
 
-set (CMAKE_CXX_STANDARD 20)
-#set (SRC_FILES "src/main.cpp")
+set(CMAKE_CXX_STANDARD 20)
+option(STORYT_BUILD_TEST off)
+set(STORYT_BUILD_SPDLOG true)
 
-include(CTest)
-include(FetchContent)
-
-set(ST_BUILD_TESTS on)
-
-if(ST_BUILD_TESTS)
-  add_subdirectory(test)
+if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR STORYT_BUILD_TEST) AND BUILD_TESTING) 
+    include(CTest) 
+    add_subdirectory("test")
+    # Google Test and SPDLog do not like each other so only build one or the other.
+    set(STORYT_BUILD_SPDLOG false)
 endif()
 
+if(STORYT_BUILD_SPDLOG)
+    include(FetchContent)
+    FetchContent_Declare(
+      spdlog
+      GIT_REPOSITORY https://github.com/gabime/spdlog.git
+      GIT_TAG v1.12.0
+    )
+    FetchContent_MakeAvailable(spdlog)
+endif()
 
-FetchContent_Declare(
-  spdlog
-  GIT_REPOSITORY https://github.com/gabime/spdlog.git
-  GIT_TAG v1.x
-)
-FetchContent_MakeAvailable(spdlog)
+#include(CMakePrintHelpers)
+#cmake_print_variables(STORYT_SHOULD_BUILD_SPDLOG)
 
 set(MSVC_WARNINGS
     "/W4" # Baseline reasonable warnings
@@ -76,11 +79,10 @@ set(CLANG_WARNINGS
     -Wimplicit-fallthrough # warn on statements that fallthrough without an explicit annotation
 )
 
-add_executable(pst_reader ${SRC_FILES} "src/main.cpp")
+add_executable(pst_reader "src/main.cpp")
 target_compile_options(pst_reader PUBLIC ${CLANG_WARNINGS})
 target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(pst_reader PRIVATE spdlog::spdlog)
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+if(STORYT_BUILD_SPDLOG)
+    target_link_libraries(pst_reader PRIVATE spdlog::spdlog)
+    add_compile_definitions(STORYT_BUILD_SPDLOG_=true)
+endif()
