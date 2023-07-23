@@ -34,18 +34,20 @@ namespace reader
 
 				if (nbt.has_value())
 				{
-					ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.value().bidSub);
+					// This SubNodeBTree must not be stored in the MessageObject. It simply allows the PC and TC 
+					// objects to set themselves up
+					ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt->bidSub);
 					/*
 					* nbt.bidData is the location of the dataTree for the PC
 					* nbt.bidSub is the location of the SubNodeTree for the Message Object.
 					*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
 					*/
-					ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.value().nid, ndb, messageSubNodeTree);
-					LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
-
+					ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt->nid, ndb, messageSubNodeTree);
 					std::optional<ltp::TableContext> recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
 					std::optional<ltp::TableContext> attachment = ltp::TableContext::Init(ATTACH_NID, messageSubNodeTree);
 					std::optional<ltp::TableContext> attachmentTable = ltp::TableContext::Init(ATTACH_TC_NID, messageSubNodeTree);
+
+					LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
 
 					STORYT_ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
 					STORYT_ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
@@ -54,12 +56,6 @@ namespace reader
 					STORYT_ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
 					STORYT_ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
 					STORYT_ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
-
-					for (const auto& [propID, prop] : pc)
-					{
-						//LOG("[INFO] propID [%X] propDataType [%X] DataSize [%i]", 
-							//prop.id, static_cast<uint32_t>(prop.propType), prop.data.size());
-					}
 
 					if (recip.has_value())
 					{
@@ -87,7 +83,6 @@ namespace reader
 					return MessageObject(
 						nid,
 						ndb,
-						std::move(messageSubNodeTree),
 						std::move(pc),
 						std::move(recip),
 						std::move(attachment),
@@ -101,11 +96,6 @@ namespace reader
 				}
 			}
 
-			void load()
-			{
-
-			}
-
 		private:
 			MessageObject(
 				core::NID nid,
@@ -116,13 +106,12 @@ namespace reader
 			MessageObject(
 				core::NID nid, 
 				core::Ref<const ndb::NDB> ndb, 
-				std::optional<ndb::SubNodeBTree> subTree,
 				std::optional<ltp::PropertyContext> pc,
 				std::optional<ltp::TableContext> recip,
 				std::optional<ltp::TableContext> attachment,
 				std::optional<ltp::TableContext> attachmentTable
 				)
-				: m_nid(nid), m_ndb(ndb), m_subtree(std::move(subTree)), m_pc(std::move(pc)), m_recip(std::move(recip)),
+				: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc)), m_recip(std::move(recip)),
 				m_attachment(std::move(attachment)), m_attachmentTable(std::move(attachmentTable))
 			{
 
@@ -236,7 +225,17 @@ namespace reader
 				return Folder(nid, ndb, std::move(normal), std::move(hier), std::move(contents), std::move(assoc));
 			}
 
-			std::vector<MessageObject> messages()
+			[[nodiscard]] const std::vector<Folder>& getSubFolders() const
+			{
+				return m_subfolders;
+			}
+
+			[[nodiscard]] size_t nSubFolders() const
+			{
+				return m_subfolders.size();
+			}
+
+			[[nodiscard]] std::vector<MessageObject> getNMessages(size_t start, size_t end)
 			{
 				/*
 				* The RowIndex (section 2.3.4.3) of the contents table TC provides an efficient mechanism to locate
@@ -246,6 +245,23 @@ namespace reader
 				*	For example, if a TCROWID is "{ dwRowID=0x200024, dwRowIndex=3 }", the NID that
 				*	corresponds to the fourth (first being 0th) Message object row in the Row Matrix is 0x200024.
 				*/
+				std::vector<MessageObject> messages{};
+				const size_t actualEnd = std::min(end, nMessages());
+				const std::vector<ltp::TCRowID>& rowIDs = m_contents.getRowIDs();
+				for (size_t i = start; i < actualEnd; ++i)
+				{
+					const ltp::TCRowID& rowid = rowIDs.at(i);
+					const core::NID rowNID(rowid.dwRowID);
+					messages.push_back(MessageObject::Init(rowNID, m_ndb));
+				}
+				return messages;
+			}
+
+			[[nodiscard]] size_t nMessages() const
+			{
+				// Returns the number of rows in the Row Index which corresponds to the number of messages
+				// contained in the folder.
+				return m_contents.nRows();
 			}
 
 		private:
@@ -279,9 +295,7 @@ namespace reader
 				* dwRowID=0x8022, dwRowIndex=3 }", the sub-Folder object NID that corresponds to the fourth
 				* (first being 0th) sub-Folder object row in the Row Matrix is 0x8022.
 				*/
-
-				const std::vector<ltp::TCRowID> rowIDs = m_hier.rowIDs();
-				for (const auto& rowid : rowIDs)
+				for (const auto& rowid : m_hier.getRowIDs())
 				{
 					const core::NID rowNID(rowid.dwRowID);
 					m_subfolders.push_back(Folder::Init(rowNID, m_ndb));
@@ -290,8 +304,7 @@ namespace reader
 
 			void _setupMessages()
 			{
-				const std::vector<ltp::TCRowID> rowIDs = m_contents.rowIDs();
-				for (const auto& rowid : rowIDs)
+				for (const auto& rowid : m_contents.getRowIDs())
 				{
 					const core::NID rowNID(rowid.dwRowID);
 					m_messages.push_back(MessageObject::Init(rowNID, m_ndb));

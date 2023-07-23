@@ -741,10 +741,9 @@ namespace reader {
 
 			static HNBitMapHDR readHNBitMapHDR(const std::vector<types::byte_t>& bytes)
 			{
-				//ASSERT((bytes.size() == 66), "[ERROR] Invalid size");
 				utils::ByteView view(bytes);
 				HNBitMapHDR hdr{};
-				hdr.ibHnpm = view.read<uint16_t>(2); // utils::slice(bytes, 0, 2, 2, utils::toT_l<uint16_t>);
+				hdr.ibHnpm = view.read<uint16_t>(2);
 				hdr.rgbFillLevel = view.split(64);
 				STORYT_ASSERT((hdr.rgbFillLevel.size() == 128), "[ERROR]");
 				return hdr;
@@ -1139,6 +1138,9 @@ namespace reader {
 				m_ndb(ndb), 
 				m_hn(hn), 
 				m_bth(m_hn, m_hn.getHeader().hidUserRoot),
+				// The SubNodeTree can afford to be copied 
+				// because at this point nothing has been read from the file.
+				// But it can't be std::move because other TCs or PCs may depend on it.
 				m_subtree(subTree)
 			{
 				STORYT_ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
@@ -1163,7 +1165,7 @@ namespace reader {
 				else if (prop.DataIsInSubNodeTree()) // NID
 				{
 					const core::NID nid(prop.data);
-					const auto dataPtr = m_subtree.getDataTree(nid);
+					ndb::DataTree* dataPtr = m_subtree.getDataTree(nid);
 					STORYT_ASSERT((dataPtr != nullptr), "[ERROR]");
 					prop.data = dataPtr->combineDataBlocks();
 				}
@@ -1282,10 +1284,15 @@ namespace reader {
 			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{			
 				const auto nbt = ndb->get(nid);
-				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
+				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt->bidSub));
 			}
 
-			[[nodiscard]] std::vector<TCRowID> rowIDs() const
+			[[nodiscard]] size_t nRows() const
+			{
+				return m_rowIDs.size();
+			}
+
+			[[nodiscard]] const std::vector<TCRowID>& getRowIDs() const
 			{
 				return m_rowIDs;
 			}
