@@ -1250,7 +1250,7 @@ namespace reader {
 		{
 		public:
 
-			static TableContext Init(
+			static std::optional<TableContext> Init(
 				core::NID dataTreeNID,
 				ndb::SubNodeBTree& parentSubNodeTree
 			)
@@ -1263,10 +1263,17 @@ namespace reader {
 				*/
 				ndb::DataTree* dataTree = parentSubNodeTree.getDataTree(dataTreeNID);
 				ndb::SubNodeBTree* nestedSubNodeTree = parentSubNodeTree.getNestedSubNodeTree(dataTreeNID);
-				STORYT_VERIFY((dataTree != nullptr));
-				STORYT_WARNIF((nestedSubNodeTree == nullptr), "Nested SubNodeBTree was not found");
-				if (nestedSubNodeTree == nullptr)
+				if (dataTree == nullptr) // A TableContext can NOT be setup without a Data Tree
 				{
+					// Only log missed DataTree NIDs that are NOT the attachment and attachment table nids
+					// because these NIDs are not required to have a DataTree
+					STORYT_WARNIF((dataTreeNID != core::NID(0x671) && dataTreeNID != core::NID(0x8025)),
+						"Data Tree was NOT found for NID [{}]", dataTreeNID.getNIDRaw());
+					return std::nullopt;
+				}
+				else if (nestedSubNodeTree == nullptr)
+				{
+					STORYT_WARN("Nested SubNodeBTree was not found");
 					return TableContext(HN::Init(dataTreeNID, std::move(*dataTree)), std::nullopt);
 				}
 				return TableContext(HN::Init(dataTreeNID, std::move(*dataTree)), std::move(*nestedSubNodeTree));

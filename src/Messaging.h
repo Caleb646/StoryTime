@@ -8,6 +8,7 @@
 #include <utility>
 #include <map>
 #include <unordered_map>
+#include <optional>
 
 #include "types.h"
 #include "utils.h"
@@ -27,65 +28,77 @@ namespace reader
 		public:
 			static MessageObject Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{
-				STORYT_ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE), "[ERROR]");
-				const auto nbt = ndb->get(nid);
-				ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.value().bidSub);
-				/*
-				* nbt.bidData is the location of the dataTree for the PC
-				* nbt.bidSub is the location of the SubNodeTree for the Message Object.
-				*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
-				*/
-				ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.value().nid, ndb, messageSubNodeTree);
-				LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
-				ltp::TableContext recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
+				STORYT_ASSERT((nid.getNIDType() == types::NIDType::NORMAL_MESSAGE));
+				const std::optional<ndb::NBTEntry> nbt = ndb->get(nid);
+				STORYT_ASSERT(nbt.has_value());
 
-				STORYT_ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
-				STORYT_ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
-				STORYT_ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
-				//ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
-				STORYT_ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
-				STORYT_ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
-				STORYT_ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
-
-				for (const auto& [propID, prop] : pc)
+				if (nbt.has_value())
 				{
-					//LOG("[INFO] propID [%X] propDataType [%X] DataSize [%i]", 
-						//prop.id, static_cast<uint32_t>(prop.propType), prop.data.size());
+					ndb::SubNodeBTree messageSubNodeTree = ndb->InitSubNodeBTree(nbt.value().bidSub);
+					/*
+					* nbt.bidData is the location of the dataTree for the PC
+					* nbt.bidSub is the location of the SubNodeTree for the Message Object.
+					*	This SubNodeTree will be shared amongst the PC, Recip TC, Attach Table TC, and Attach TC
+					*/
+					ltp::PropertyContext pc = ltp::PropertyContext::Init(nbt.value().nid, ndb, messageSubNodeTree);
+					LOG(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
+
+					std::optional<ltp::TableContext> recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
+					std::optional<ltp::TableContext> attachment = ltp::TableContext::Init(ATTACH_NID, messageSubNodeTree);
+					std::optional<ltp::TableContext> attachmentTable = ltp::TableContext::Init(ATTACH_TC_NID, messageSubNodeTree);
+
+					STORYT_ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
+					STORYT_ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+					//ASSERT((pc.is(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+					STORYT_ASSERT((pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)), "[ERROR]");
+					STORYT_ASSERT((pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)), "[ERROR]");
+					STORYT_ASSERT((pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+
+					for (const auto& [propID, prop] : pc)
+					{
+						//LOG("[INFO] propID [%X] propDataType [%X] DataSize [%i]", 
+							//prop.id, static_cast<uint32_t>(prop.propType), prop.data.size());
+					}
+
+					if (recip.has_value())
+					{
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::AddressType, types::PropertyType::String)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)), "[ERROR]");
+
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+						STORYT_ASSERT((recip->hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+
+						const ltp::TColDesc ltpRowIdCol = recip->getCol(types::PidTagType::LtpRowId);
+						const ltp::TColDesc ltpRowVerCol = recip->getCol(types::PidTagType::LtpRowVer);
+						STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
+						STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+					}
+					return MessageObject(
+						nid,
+						ndb,
+						std::move(messageSubNodeTree),
+						std::move(pc),
+						std::move(recip),
+						std::move(attachment),
+						std::move(attachmentTable)
+					);
 				}
-
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::AddressType, types::PropertyType::String)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)), "[ERROR]");
-
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
-				STORYT_ASSERT((recip.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
-
-				const ltp::TColDesc ltpRowIdCol = recip.getCol(types::PidTagType::LtpRowId);
-				const ltp::TColDesc ltpRowVerCol = recip.getCol(types::PidTagType::LtpRowVer);
-				STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
-				STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
-
-				//const auto entries = recip.getRow(recip.rowIDs()[0]);
-
-
-				//ndb::DataTree* attachTableData = subnodeBTree.at(ATTACH_TC_NID);
-				//ndb::DataTree* attachData = subnodeBTree.at(ATTACH_NID);
-				return MessageObject(
-					nid, 
-					ndb, 
-					ndb->InitSubNodeBTree(nbt.value().bidSub),
-					std::move(pc), 
-					std::move(recip)
-				);
+				else
+				{
+					STORYT_ERROR("Failed to construct message because NBTEntry could not be found with NID [{}]", nid.getNIDRaw());
+					return MessageObject(nid, ndb);
+				}
 			}
 
 			void load()
@@ -95,22 +108,33 @@ namespace reader
 
 		private:
 			MessageObject(
+				core::NID nid,
+				core::Ref<const ndb::NDB> ndb
+			)
+				: m_nid(nid), m_ndb(ndb) {}
+
+			MessageObject(
 				core::NID nid, 
 				core::Ref<const ndb::NDB> ndb, 
-				ndb::SubNodeBTree&& subTree,
-				ltp::PropertyContext&& pc,
-				ltp::TableContext&& recip
+				std::optional<ndb::SubNodeBTree> subTree,
+				std::optional<ltp::PropertyContext> pc,
+				std::optional<ltp::TableContext> recip,
+				std::optional<ltp::TableContext> attachment,
+				std::optional<ltp::TableContext> attachmentTable
 				)
-				: m_nid(nid), m_ndb(ndb), m_subtree(subTree), m_pc(pc), m_recip(recip)
+				: m_nid(nid), m_ndb(ndb), m_subtree(std::move(subTree)), m_pc(std::move(pc)), m_recip(std::move(recip)),
+				m_attachment(std::move(attachment)), m_attachmentTable(std::move(attachmentTable))
 			{
 
 			}
 		private:
 			core::NID m_nid;
 			core::Ref<const ndb::NDB> m_ndb;
-			ndb::SubNodeBTree m_subtree;
-			ltp::PropertyContext m_pc;
-			ltp::TableContext m_recip;
+			std::optional<ndb::SubNodeBTree> m_subtree;
+			std::optional<ltp::PropertyContext> m_pc;
+			std::optional<ltp::TableContext> m_recip;
+			std::optional<ltp::TableContext> m_attachment;
+			std::optional<ltp::TableContext> m_attachmentTable;
 
 			/// (required) The subnode is a Message Recipient Table
 			static constexpr core::NID RECIPIENT_TC_NID{ 0x692 };		

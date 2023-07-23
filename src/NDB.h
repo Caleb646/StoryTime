@@ -1002,7 +1002,7 @@ namespace reader::ndb {
                 }
                 else // Encountered Invalid Block Type
                 {
-                    STORYT_ASSERT(false, "[ERROR] Unknown SubNode Type");
+                    STORYT_ASSERT(false);
                 }
 
                 m_subtrees.reserve(m_slentries.size());
@@ -1022,13 +1022,19 @@ namespace reader::ndb {
                             std::forward_as_tuple(slentry.bidSub, m_file, m_getBBT)
                         );
                     }
-                    //const auto [dataTreeBytes, dataTreeBBT] = readBlockBytes(slentry.bidData);
                     const std::optional<BBTEntry> dataTreeBBT = m_getBBT(slentry.bidData);
-                    m_datatrees.emplace(
-                        std::piecewise_construct,
-                        std::forward_as_tuple(nidID),
-                        std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.value().bref, dataTreeBBT.value().cb)
-                    );
+                    if (dataTreeBBT.has_value())
+                    {
+                        m_datatrees.emplace(
+                            std::piecewise_construct,
+                            std::forward_as_tuple(nidID),
+                            std::forward_as_tuple(m_file, m_getBBT, dataTreeBBT.value().bref, dataTreeBBT.value().cb)
+                        );
+                    }
+                    else
+                    {
+                        STORYT_ERROR("Failed to find BBTEntry with BID [{}]", slentry.bidData.getBidRaw());
+                    }   
                 }
             }
         }
