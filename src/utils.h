@@ -732,13 +732,14 @@ namespace reader::utils {
         template<typename PrimitiveType>
         PrimitiveType read(size_t size)
         {
+            STORYT_ASSERT((sizeof(PrimitiveType) == size));
             const size_t start = m_start;
             m_start += size;
             return slice(m_bytes, start, start + size, size, toT_l<PrimitiveType>);
         }
 
         template<typename PrimitiveType>
-        std::vector<PrimitiveType> read(size_t nPrimitives, size_t singlePrimitiveSize)
+        std::vector<PrimitiveType> read(size_t nPrimitives, size_t singlePrimitiveSize, size_t nskip = 0)
         {
             std::vector<PrimitiveType> res{};
             res.reserve(nPrimitives);
@@ -748,6 +749,7 @@ namespace reader::utils {
                 // Do NOT need to increment m_start here because the
                 // read method is doing it for us.
                 res.push_back(read<PrimitiveType>(singlePrimitiveSize));
+                skip(nskip);
             }
             return res;
         }

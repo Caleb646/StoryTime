@@ -657,12 +657,11 @@ namespace reader {
 			[[nodiscard]] types::BType getBType() const { return utils::toBType(m_hnhdr.bClientSig); }
 			[[nodiscard]] HNHDR getHeader() const { return m_hnhdr; }
 			[[nodiscard]] const HNBlock& at(size_t blockIdx) const { return m_blocks.at(blockIdx); }
-
 			[[nodiscard]] std::vector<types::byte_t> getAllocation(const HID& hid) const
 			{
 				const size_t blockIdx = hid.getHIDBlockIndex();
 				const size_t pageIdx = hid.getHIDAllocIndex();
-				const HNBlock block = at(blockIdx);
+				const HNBlock& block = at(blockIdx);
 				const size_t start = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx - 1));
 				const size_t end = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx));
 				const size_t size = end - start;
@@ -717,7 +716,7 @@ namespace reader {
 				// The beginning of the HNPAGEMAP is aligned on a 2-byte
 				// boundary so there can be an additional 1 byte of padding between 
 				// the last heap item and the HNPAGEMAP.
-				LOGIF((lastAlloc != start && lastAlloc + 1 != start),
+				STORYT_ERRORIF((lastAlloc != start && lastAlloc + 1 != start),
 					"[WARN] The last entry is rgibAlloc in the HNPageMap != the start of the HNPageMap. Last Alloc: [%i] Start: [%i]", lastAlloc, start);
 				// 12 is the size of the HNHDR Header
 				// 4 is the combined size of cAlloc and cFree
@@ -758,8 +757,7 @@ namespace reader {
 					static_assert(std::is_copy_constructible_v<HN>, "HN must be copy constructible");
 					static_assert(std::is_copy_assignable_v<HN>, "HN must be copy assignable");
 
-					size_t idx = 0;
-					
+					size_t idx = 0;	
 					for (ndb::DataBlock& dataBlock : m_dataTree)
 					{
 						if (idx == 0)
@@ -788,7 +786,6 @@ namespace reader {
 		class BTreeHeap
 		{
 		public:
-			//BTreeHeap() = default;
 			BTreeHeap(const HN& hn, HID bthHeaderHID)
 			{ 
 				static_assert(std::is_move_constructible_v<BTreeHeap>, "BTreeHeap must be move constructible");
@@ -990,15 +987,8 @@ namespace reader {
 				STORYT_ASSERT((data.size() % 2ULL == 0ULL), "[ERROR] Property is not a PTString");
 				STORYT_ASSERT((data.size() != 0ULL), "[ERROR] Property is not a PTString");
 
-				std::vector<uint8_t> characters{};
-				for(uint32_t i = 0; i < data.size() / 2ULL; ++i)
-				{
-					uint32_t start = utils::cast<uint32_t>(i * info.singleEntrySize);
-					uint32_t end = utils::cast<uint32_t>(start + info.singleEntrySize);
-					// TODO: For now this just takes the most significant byte and converts it to utf8
-					types::utf16le_t character = utils::slice(data, start, end, end - start, utils::toT_l<types::utf16le_t>);
-					characters.push_back(utils::cast<uint8_t>(character & 0xFF));
-				}
+				utils::ByteView view(data);
+				std::vector<uint8_t> characters = view.read<uint8_t>(data.size() / 2U, 1U, 1U);
 				PTString str{};
 				str.id = id;
 				str.data = std::string(characters.begin(), characters.end());
@@ -1152,8 +1142,8 @@ namespace reader {
 			void _loadProperty(uint32_t propID)
 			{
 				Property& prop = m_properties.at(propID);
-				STORYT_ASSERT((prop.data.size() == 4), "[ERROR] Trying to load an already loaded property");
-				if (prop.DataIsInHNID()) // Data Value
+				//STORYT_ASSERT((prop.data.size() == 4), "[ERROR] Trying to load an already loaded property");
+				if (prop.DataIsInHNID() || !prop.data.size() == 4) // Data Value or Data for prop has already been loaded
 				{
 					return;
 				}

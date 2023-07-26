@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <cassert>
 #include <vector>
+#include <optional>
 
 #include "utils.h"
 #include "types.h"
@@ -21,31 +22,35 @@ namespace reader
     class PSTReader
     {
     public:
-        PSTReader(const std::string path) : m_path(path) {}
+        PSTReader(const std::string& path) 
+            : m_path(path) {}
         ~PSTReader()
         {
-            if(m_file.is_open())
+            if (m_file.is_open())
+            {
                 m_file.close();
+            }
         }
 
         void read()
         {
-            _open(m_path);
-            //std::shared_ptr<const ndb::NDB> ndb = std::make_shared<const ndb::NDB>(m_file, _readHeader(m_file));
-            //std::shared_ptr<const ltp::LTP> ltp = std::make_shared<const ltp::LTP>(ndb);
-            //msg::Messaging msg(ltp, ndb);
+            _open();
+            m_ndb.reset(new ndb::NDB(m_file, _readHeader(m_file)));
+            m_ltp.reset(new ltp::LTP(core::Ref<const ndb::NDB>{*m_ndb}));
+            m_msg.reset(new msg::Messaging(core::Ref<const ndb::NDB>{*m_ndb}, core::Ref<const ltp::LTP>{*m_ltp}));
+        }
 
-            ndb::NDB ndb(m_file, _readHeader(m_file));
-            ltp::LTP ltp(core::Ref<const ndb::NDB>{ndb});
-            msg::Messaging msg(core::Ref<const ndb::NDB>{ndb}, core::Ref<const ltp::LTP>{ltp});
+        template<typename FolderID>
+        msg::Folder* getFolder(FolderID folderID)
+        {
+            return m_msg->getFolder(folderID);
         }
 
     private:
-
-        void _open(const std::string path, int mode = std::ios::binary)
+        void _open()
         {
-            m_file.open(path, mode);
-            STORYT_ASSERT(m_file.is_open(), "[ERROR] Failed to open [file] %s", path.c_str());
+            m_file.open(m_path, std::ios::binary);
+            STORYT_ASSERT(m_file.is_open(), "[ERROR] Failed to open [file] {}", path.c_str());
         }
 
         core::Header _readHeader(std::ifstream& file)
@@ -56,7 +61,7 @@ namespace reader
             const std::vector<types::byte_t> bytes = utils::readBytes(file, 564);
 
             /**
-             * dwMagic (4 bytes): MUST be "{ 0x21, 0x42, 0x44, 0x4E } ("!BDN")". 
+             * dwMagic (4 bytes): MUST be { 0x21, 0x42, 0x44, 0x4E }
             */
             const uint32_t dwMagic = utils::slice(bytes, 0, 4, 4, utils::toT_l<uint32_t>);
             utils::isIn(dwMagic, { 0x21, 0x42, 0x44, 0x4E });
@@ -189,7 +194,6 @@ namespace reader
            * qwUnused (8 bytes): Unused space; MUST be set to zero. Unicode PST file format only. 
            */
            utils::slice(bytes, 172, 180, 8, utils::toT_l<std::int64_t>);
-           //ASSERT(std::cmp_equal(qwUnused, 0), "[ERROR]")
 
            /*
            * root (Unicode: 72 bytes; ANSI: 40 bytes): A ROOT structure
@@ -213,13 +217,13 @@ namespace reader
            std::vector<types::byte_t> rgbFP = utils::slice(bytes, 384, 512, 128);
 
            /*
-           * bSentinel (1 types::byte_t): MUST be set to 0x80. 
+           * bSentinel (1 byte): MUST be set to 0x80. 
            */
            const uint8_t bSentinel = utils::slice(bytes, 512, 513, 1, utils::toT_l<uint8_t>);
            utils::isIn(bSentinel, { 0x80 });
 
            /*
-           * bCryptMethod (1 types::byte_t): Indicates how the data within the PST file is encoded. 
+           * bCryptMethod (1 byte): Indicates how the data within the PST file is encoded. 
            * MUST be set to one of the pre-defined values described in the following table. 
            * 
            * Value Friendly name Meaning 
@@ -228,8 +232,9 @@ namespace reader
            * 0x02 NDB_CRYPT_CYCLIC Encoded with the Cyclic algorithm (section 5.2). 
            * 0x10 NDB_CRYPT_EDPCRYPTED Encrypted with Windows Information Protection. 
            */
-           uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
+           const uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
            STORYT_ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "[ERROR] Invalid Encryption");
+           STORYT_VERIFY((bCryptMethod == 0x01)); // Only support Permute currently
            LOG("[bCryptMethod] %X", bCryptMethod);
             
            /*
@@ -256,21 +261,18 @@ namespace reader
            * Creators of a new PST MUST initialize this value to zero.
            */
            std::vector<types::byte_t> rgbReserved2 = utils::slice(bytes, 528, 531, 3);
-           //utils::isEqual(rgbReserved2, { 0x00, 0x00, 0x00 }, "rgbReserved2");
 
            /*
            * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
            *  Creators of a new PST file MUST initialize this value to zero.
            */
            std::vector<types::byte_t> bReserved = utils::slice(bytes, 531, 532, 1);
-           //utils::isEqual(bReserved, { 0x00 }, "bReserved");
 
            /*
            * rgbReserved3 (32 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
            *  Creators of a new PST MUST initialize this value to zero.
            */
            std::vector<types::byte_t> rgbReserved3 = utils::slice(bytes, 532, 564, 32);
-           //utils::isEqual(rgbReserved3, std::vector<types::byte_t>(32, 0x00), "rgbReserved3");
 
            return core::Header(core::Root::Init(root));
         }
@@ -278,6 +280,9 @@ namespace reader
     private:
         std::ifstream m_file;
         std::string m_path;
+        std::unique_ptr<ndb::NDB> m_ndb{nullptr};
+        std::unique_ptr<ltp::LTP> m_ltp{nullptr};
+        std::unique_ptr<msg::Messaging> m_msg{nullptr};
     };
 }
 
