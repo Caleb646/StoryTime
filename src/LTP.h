@@ -32,7 +32,7 @@ namespace reader {
 				: m_hid(utils::slice(data, 0, 4, 4, utils::toT_l<uint32_t>))
 			{
 				STORYT_ASSERT((utils::getNIDType(getHIDType()) == types::NIDType::HID),
-					"[ERROR] Invalid HID Type");
+					"Invalid HID Type");
 			}
 			/// @brief (5 bits) MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.
 			[[nodiscard]] uint32_t getHIDType() const
@@ -44,7 +44,7 @@ namespace reader {
 			[[nodiscard]] uint32_t getHIDAllocIndex() const
 			{ 
 				const uint32_t index = (m_hid >> 5U) & 0x7FFU;
-				STORYT_ASSERT((index != 0), "[ERROR] Invalid HID Index");
+				STORYT_ASSERT((index != 0), "Invalid HID Index");
 				return index;
 			}
 			/// @brief (16 bits) This is the zero-based data block index. 
@@ -79,7 +79,7 @@ namespace reader {
 			explicit HNID(const std::vector<types::byte_t>& data)
 				: m_data(data)
 			{
-				STORYT_ASSERT((m_data.size() == HNID::sizeNBytes), "[ERROR]");
+				STORYT_ASSERT((m_data.size() == HNID::sizeNBytes), "m_data.size() [{}] == HNID::sizeNBytes [4]", m_data.size());
 			}
 
 			[[nodiscard]] bool isHID() const
@@ -228,9 +228,9 @@ namespace reader {
 
 			IntermediateBTHRecord(const std::vector<types::byte_t>& bytes, size_t keySize, size_t dataSize)
 			{
-				STORYT_ASSERT((keySize <= sizeof(uint64_t)), "[ERROR]");
-				STORYT_ASSERT((dataSize == HID::SizeNBytes), "[ERROR]");
-				STORYT_ASSERT((bytes.size() == keySize + dataSize), "[ERROR]");
+				STORYT_ASSERT((keySize <= sizeof(uint64_t)), "keySize is not <= sizeof(uint64_t)");
+				STORYT_ASSERT((dataSize == HID::SizeNBytes), "dataSize != HID::SizeNBytes");
+				STORYT_ASSERT((bytes.size() == keySize + dataSize), "bytes.size() != keySize + dataSize");
 				utils::ByteView view(bytes);
 				key = view.read<uint64_t>(keySize);
 				hidNextLevel = view.entry<HID>(dataSize);
@@ -473,19 +473,18 @@ namespace reader {
 				const size_t offset1b = header.rgib.at(TCInfo::TCI_1b);
 				const size_t totalRowSize = header.rgib.at(TCInfo::TCI_bm);
 
-				STORYT_ASSERT((offset4b <= offset2b), "[ERROR]");
-				STORYT_ASSERT((offset2b <= offset1b), "[ERROR]");
-				STORYT_ASSERT((offset1b < totalRowSize), "[ERROR]");
+				STORYT_ASSERT((offset4b <= offset2b), "offset4b is not <= offset2b");
+				STORYT_ASSERT((offset2b <= offset1b), "offset2b is not <= offset1b");
+				STORYT_ASSERT((offset1b < totalRowSize), "offset1b is not < totalRowSize");
 
 				tcInfo = header;
 				utils::ByteView view(rowBytes);
 				dwRowID = view.read<uint32_t>(4);
 				// Read everything from the start of Row Data to the start of rgbCEB
-				data = view.setStart(0).read(offset1b); // utils::slice(rowBytes, 0ULL, offset1b, offset1b);
+				data = view.setStart(0).read(offset1b);
 				rgbCEB = view.read(totalRowSize - offset1b);
 
-				//ASSERT((dwRowID == rowID.dwRowID), "[ERROR]");
-				STORYT_ASSERT((rgbCEB.size() == static_cast<size_t>(std::ceil(static_cast<double>(header.cCols) / 8.0))), "[ERROR]");
+				STORYT_ASSERT((rgbCEB.size() == static_cast<size_t>(std::ceil(static_cast<double>(header.cCols) / 8.0))), "RowData Constructor");
 			}
 
 			[[nodiscard]] bool exists(uint8_t iBit) const
@@ -506,7 +505,7 @@ namespace reader {
 				size_t keySize
 			)
 			{
-				STORYT_ASSERT((keySize + 4 == bytes.size()), "[ERROR] Invalid size");
+				STORYT_ASSERT((keySize + 4 == bytes.size()), "keySize + 4 != bytes.size()");
 				return IntermediateBTHRecord(bytes, keySize, HID::SizeNBytes);
 			}
 
@@ -516,7 +515,7 @@ namespace reader {
 				size_t dataSize
 			)
 			{
-				STORYT_ASSERT((bytes.size() == keySize + dataSize), "[ERROR] Invalid size");
+				STORYT_ASSERT((bytes.size() == keySize + dataSize), "bytes.size() != keySize + dataSize");
 				utils::ByteView view(bytes);
 				LeafBTHRecord record{};
 				record.key = view.read(keySize); // utils::slice(bytes, 0ull, keySize, keySize);
@@ -530,16 +529,16 @@ namespace reader {
 				size_t dataSize
 			)
 			{
-				STORYT_ASSERT((bytes.size() == 8), "[ERROR]");
-				STORYT_ASSERT((keySize == 2), "[ERROR]");
-				STORYT_ASSERT((dataSize == 6), "[ERROR]");
+				STORYT_ASSERT((bytes.size() == 8), "bytes.size() != 8");
+				STORYT_ASSERT((keySize == 2), "keySize != 2");
+				STORYT_ASSERT((dataSize == 6), "dataSize != 6");
 				utils::ByteView view(bytes);
 				PCBTHRecord record{};
 				record.wPropId = view.read<uint16_t>(2);
 				record.wPropType = view.read<uint16_t>(2);
 				record.dwValueHnid = view.read(4); 
 
-				STORYT_ASSERT((utils::isIn(record.wPropType, utils::PROPERTY_TYPE_VALUES)), "[ERROR] Invalid property type");
+				STORYT_ASSERT((utils::isIn(record.wPropType, utils::PROPERTY_TYPE_VALUES)), "Invalid property type");
 				return record;
 			}
 
@@ -549,9 +548,9 @@ namespace reader {
 				size_t dataSize
 			)
 			{
-				STORYT_ASSERT((bytes.size() == 8), "[ERROR]");
-				STORYT_ASSERT((keySize == 4), "[ERROR]");
-				STORYT_ASSERT((dataSize == 4), "[ERROR]");
+				STORYT_ASSERT((bytes.size() == 8), "bytes.size() != 8");
+				STORYT_ASSERT((keySize == 4), "keySize != 4");
+				STORYT_ASSERT((dataSize == 4), "dataSize != 4");
 				utils::ByteView view(bytes);
 				TCRowID record{};
 				record.dwRowID = view.read<uint32_t>(4);
@@ -580,7 +579,7 @@ namespace reader {
 				}
 				else
 				{
-					STORYT_ASSERT(false, "[ERROR] Invalid Record Type");
+					STORYT_ASSERT(false, "Invalid Record Type");
 				}	
 			}
 		private:
@@ -630,7 +629,7 @@ namespace reader {
 
 			bool addBlock(const std::vector<types::byte_t>& data, size_t blockIdx)
 			{
-				STORYT_ASSERT((m_blocks.size() == blockIdx), "[ERROR] Invalid blockIdx");
+				STORYT_ASSERT((m_blocks.size() == blockIdx), "m_blocks.size() != blockIdx");
 				if(blockIdx == 8 || blockIdx % 8 + 128 == 0)
 				{
 					const HNBitMapHDR bmheader = readHNBitMapHDR(data);
@@ -672,7 +671,7 @@ namespace reader {
 
 			static HNHDR readHNHDR(const std::vector<types::byte_t>& bytes, size_t dataBlockIdx, size_t nDataBlocks)
 			{
-				STORYT_ASSERT((dataBlockIdx == 0), "[ERROR] Only the first data block contains a HNHDR");
+				STORYT_ASSERT((dataBlockIdx == 0), "Only the first data block contains a HNHDR");
 				utils::ByteView view(bytes);
 				HNHDR hnhdr{};
 				hnhdr.ibHnpm = view.read<uint16_t>(2);
@@ -682,17 +681,17 @@ namespace reader {
 				hnhdr.rgbFillLevel = view.split(4); //utils::toBits(utils::slice(bytes, 8, 12, 4, utils::toT_l<uint32_t>), 4);
 
 				const uint32_t hidType = hnhdr.hidUserRoot.getHIDType();
-				STORYT_ASSERT((hidType == 0), "[ERROR] Invalid HID Type %i", hidType);
-				STORYT_ASSERT((hnhdr.bSig == 0xECU), "[ERROR] Invalid HN signature");
-				STORYT_ASSERT(utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES), "[ERROR] Invalid BType");
-				STORYT_ASSERT((hnhdr.rgbFillLevel.size() == 8U), "[ERROR] Invalid Fill Level size must be 8");
+				STORYT_ASSERT((hidType == 0), "Invalid HID Type [{}]", hidType);
+				STORYT_ASSERT((hnhdr.bSig == 0xECU), "Invalid HN signature");
+				STORYT_ASSERT(utils::isIn(hnhdr.bClientSig, utils::BTYPE_VALUES), "Invalid BType");
+				STORYT_ASSERT((hnhdr.rgbFillLevel.size() == 8U), "Invalid Fill Level size must be 8");
 
 				if (nDataBlocks < 8)
 				{
 					for (size_t i = nDataBlocks; i < 8; i++)
 					{
 						STORYT_ASSERT((static_cast<uint32_t>(hnhdr.rgbFillLevel.at(i)) == static_cast<uint32_t>(types::FillLevel::LEVEL_EMPTY)),
-							"[ERROR] Fill level must be empty for block at idx [%i]", i);
+							"Fill level must be empty for block at idx [{}]", i);
 					}
 				}
 				return hnhdr;
@@ -705,11 +704,11 @@ namespace reader {
 				pg.cAlloc = view.read<uint16_t>(2);
 				pg.cFree = view.read<uint16_t>(2); 
 				pg.rgibAlloc = view.read<uint16_t>(pg.cAlloc + 1, 2);
-				STORYT_ASSERT((pg.rgibAlloc.size() == pg.cAlloc + 1), "[ERROR] Should be cAlloc + 1 entries");
+				STORYT_ASSERT((pg.rgibAlloc.size() == pg.cAlloc + 1), "Should be cAlloc + 1 entries");
 
 				for (size_t i = 1; i < pg.rgibAlloc.size(); i++)
 				{
-					STORYT_ASSERT((pg.rgibAlloc[i] > pg.rgibAlloc[i - 1]), "[ERROR]");
+					STORYT_ASSERT((pg.rgibAlloc[i] > pg.rgibAlloc[i - 1]), "pg.rgibAlloc[i] is not > pg.rgibAlloc[i - 1]");
 				}
 				const uint16_t lastAlloc = pg.rgibAlloc.at(pg.rgibAlloc.size() - 1);
 
@@ -717,7 +716,7 @@ namespace reader {
 				// boundary so there can be an additional 1 byte of padding between 
 				// the last heap item and the HNPAGEMAP.
 				STORYT_ERRORIF((lastAlloc != start && lastAlloc + 1 != start),
-					"[WARN] The last entry is rgibAlloc in the HNPageMap != the start of the HNPageMap. Last Alloc: [%i] Start: [%i]", lastAlloc, start);
+					"The last entry is rgibAlloc in the HNPageMap != the start of the HNPageMap. Last Alloc: [{}] Start: [{}]", lastAlloc, start);
 				// 12 is the size of the HNHDR Header
 				// 4 is the combined size of cAlloc and cFree
 				//const uint64_t size = pg.rgibAlloc.back() - pg.rgibAlloc.front();
@@ -744,7 +743,7 @@ namespace reader {
 				HNBitMapHDR hdr{};
 				hdr.ibHnpm = view.read<uint16_t>(2);
 				hdr.rgbFillLevel = view.split(64);
-				STORYT_ASSERT((hdr.rgbFillLevel.size() == 128), "[ERROR]");
+				STORYT_ASSERT((hdr.rgbFillLevel.size() == 128), "hdr.rgbFillLevel.size() != 128");
 				return hdr;
 			}
 
@@ -809,7 +808,7 @@ namespace reader {
 
 			static BTHHeader readBTHHeader(const std::vector<types::byte_t>& bytes)
 			{
-				STORYT_ASSERT((bytes.size() == 8), "[ERROR]");
+				STORYT_ASSERT((bytes.size() == 8), "readBTHHeader");
 				utils::ByteView view{bytes};
 				BTHHeader header{};
 				header.bType = view.read<uint8_t>(1); 
@@ -819,13 +818,13 @@ namespace reader {
 				/// hidRoot can be equal to zero if the BTH is empty
 				header.hidRoot = view.entry<HID>(4); 
 
-				STORYT_ASSERT((utils::toBType(header.bType) == types::BType::BTH), "[ERROR] Invalid BTree on Heap");
-				STORYT_ASSERT((utils::isIn(header.cbKey, { 2, 4, 8, 16 })), "[ERROR]");
-				STORYT_ASSERT((header.cbEnt > 0 && header.cbEnt <= 32), "[ERROR]");
+				STORYT_ASSERT((utils::toBType(header.bType) == types::BType::BTH), "utils::toBType(header.bType) != types::BType::BTH");
+				STORYT_ASSERT((utils::isIn(header.cbKey, { 2, 4, 8, 16 })), "header.cbKey is NOT in {2, 4, 8, 16}");
+				STORYT_ASSERT((header.cbEnt > 0 && header.cbEnt <= 32), "readBTHHeader");
 
 				if (header.hidRoot.getHIDRaw() > 0)
 				{
-					STORYT_ASSERT( (header.hidRoot.getHIDAllocIndex() > 0), "[ERROR] Invalid Allocation Index");
+					STORYT_ASSERT((header.hidRoot.getHIDAllocIndex() > 0), "Invalid Allocation Index");
 				}
 				return header;
 			}
@@ -839,11 +838,11 @@ namespace reader {
 			{
 				const size_t rsize = keySize + dataSize;
 				const size_t nRecords = bytes.size() / rsize;
-				STORYT_ASSERT((bytes.size() % rsize == 0), "[ERROR] nRecords must be a mutiple of keySize + dataSize");
+				STORYT_ASSERT((bytes.size() % rsize == 0), "nRecords must be a mutiple of keySize + dataSize");
 
 				if (bIdxLevels > 0)
 				{
-					STORYT_ASSERT((dataSize == HID::SizeNBytes), "[ERROR]");
+					STORYT_ASSERT((dataSize == HID::SizeNBytes), "readBTHRecords");
 					utils::ByteView view(bytes);
 					std::vector<IntermediateBTHRecord> inters = view.entries<IntermediateBTHRecord>(nRecords, rsize, keySize, dataSize);
 					std::vector<types::byte_t> totalBytes{};
@@ -855,10 +854,10 @@ namespace reader {
 					return readBTHRecords(hn, totalBytes, keySize, bIdxLevels - 1, dataSize);
 				}
 
-				STORYT_ASSERT((bIdxLevels == 0), "[ERROR] bIdxLevels != 0 [%i]", bIdxLevels);
+				STORYT_ASSERT((bIdxLevels == 0), "bIdxLevels != 0 [{}]", bIdxLevels);
 				utils::ByteView view(bytes);
 				std::vector<Record> records = view.entries<Record>(nRecords, rsize, keySize, dataSize);
-				STORYT_ASSERT((records.size() == nRecords), "[ERROR] Invalid size");
+				STORYT_ASSERT((records.size() == nRecords), "Invalid size");
 				return records;
 			}
 
@@ -931,17 +930,17 @@ namespace reader {
 				mv.rgulDataOffsets.push_back(utils::cast<uint32_t>(data.size()));
 
 				/// Contains ulCount + 1 offsets because I add data.size() as the last offset
-				STORYT_ASSERT(std::cmp_equal(mv.ulCount + 1, mv.rgulDataOffsets.size()), "[ERROR] Invalid size");
-				STORYT_ASSERT(std::cmp_greater(data.size(), 4ull + offsetSize), "[ERROR] Invalid size");
+				STORYT_ASSERT(std::cmp_equal(mv.ulCount + 1, mv.rgulDataOffsets.size()), "Invalid size");
+				STORYT_ASSERT(std::cmp_greater(data.size(), 4ULL + offsetSize), "Invalid size");
 
-				size_t dataSize = data.size() - (4ull + offsetSize);
+				size_t dataSize = data.size() - (4ULL + offsetSize);
 				mv.rgDataItems = utils::slice(
 					data, 
 					4ull + offsetSize,
 					data.size(),
 					dataSize
 				);
-				STORYT_ASSERT(std::cmp_equal(mv.ulCount, mv.rgDataItems.size()), "[ERROR] Invalid size");
+				STORYT_ASSERT(std::cmp_equal(mv.ulCount, mv.rgDataItems.size()), "Invalid size");
 				return mv;
 			}
 		};
@@ -969,9 +968,9 @@ namespace reader {
 		public:
 			[[nodiscard]] PTBinary asPTBinary() const
 			{
-				STORYT_ASSERT(!info.isMv, "[ERROR] Property is not a PTBinary");
-				STORYT_ASSERT(!info.isFixed, "[ERROR] Property is not a PTBinary");
-				STORYT_ASSERT(std::cmp_equal(info.singleEntrySize, 0ull), "[ERROR] Property is not a PTBinary");
+				STORYT_ASSERT(!info.isMv, "Property is not a PTBinary");
+				STORYT_ASSERT(!info.isFixed, "Property is not a PTBinary");
+				STORYT_ASSERT(std::cmp_equal(info.singleEntrySize, 0ULL), "Property is not a PTBinary");
 				PTBinary bin{};
 				bin.id = id;
 				bin.data = data;
@@ -981,11 +980,11 @@ namespace reader {
 			[[nodiscard]] PTString asPTString() const
 			{
 
-				STORYT_ASSERT(!info.isMv, "[ERROR] Property is not a PTString");
-				STORYT_ASSERT(!info.isFixed, "[ERROR] Property is not a PTString");
-				STORYT_ASSERT((info.singleEntrySize == 2ULL), "[ERROR] Property is not a PTString");
-				STORYT_ASSERT((data.size() % 2ULL == 0ULL), "[ERROR] Property is not a PTString");
-				STORYT_ASSERT((data.size() != 0ULL), "[ERROR] Property is not a PTString");
+				STORYT_ASSERT(!info.isMv, "Property is not a PTString");
+				STORYT_ASSERT(!info.isFixed, "Property is not a PTString");
+				STORYT_ASSERT((info.singleEntrySize == 2ULL), "Property is not a PTString");
+				STORYT_ASSERT((data.size() % 2ULL == 0ULL), "Property is not a PTString");
+				STORYT_ASSERT((data.size() != 0ULL), "Property is not a PTString");
 
 				utils::ByteView view(data);
 				std::vector<uint8_t> characters = view.read<uint8_t>(data.size() / 2U, 1U, 1U);
@@ -1014,7 +1013,7 @@ namespace reader {
 				}
 				else
 				{
-					STORYT_ASSERT(false, "[ERROR] Invalid Property Type");
+					STORYT_ASSERT(false, "Invalid Property Type");
 					return PropType{};
 				}
 			}
@@ -1030,7 +1029,7 @@ namespace reader {
 
 			bool DataIsInHeap() const
 			{
-				STORYT_ASSERT((data.size() == 4), "[ERROR] Data should be an HNID");
+				STORYT_ASSERT((data.size() == 4), "Data should be an HNID");
 				if ((info.isFixed && info.singleEntrySize > 4U) || (data[0] & 0x1FU) == 0U) // HID
 				{
 					return true;
@@ -1164,16 +1163,15 @@ namespace reader {
 
 			void _init()
 			{
-				STORYT_ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
-				STORYT_ASSERT((m_bth.getKeySize() == 2), "[ERROR]");
-				STORYT_ASSERT((m_bth.getDataSize() == 6), "[ERROR]");
+				STORYT_ASSERT((m_hn.getBType() == types::BType::PC), "m_hn.getBType() != types::BType::PC");
+				STORYT_ASSERT((m_bth.getKeySize() == 2), "m_bth.getKeySize() != 2");
+				STORYT_ASSERT((m_bth.getDataSize() == 6), "m_bth.getDataSize() != 6");
 				_loadMetaProps();
 			}
 
 			void _loadProperty(uint32_t propID)
 			{
 				Property& prop = m_properties.at(propID);
-				//STORYT_ASSERT((prop.data.size() == 4), "[ERROR] Trying to load an already loaded property");
 				if (prop.DataIsInHNID() || !prop.data.size() == 4) // Data Value or Data for prop has already been loaded
 				{
 					return;
@@ -1189,7 +1187,7 @@ namespace reader {
 					{
 						const core::NID nid(prop.data);
 						ndb::DataTree* dataPtr = m_subtree->getDataTree(nid);
-						STORYT_ASSERT((dataPtr != nullptr), "[ERROR]");
+						STORYT_ASSERT((dataPtr != nullptr), "Failed to find DataTree for Property [{}]", prop.id);
 						prop.data = dataPtr->combineDataBlocks();
 					}
 					else
@@ -1199,7 +1197,7 @@ namespace reader {
 				}
 				else
 				{
-					STORYT_ASSERT(false, "[ERROR] Invalid Property");
+					STORYT_ASSERT(false, "Invalid Property");
 				}
 			}
 
@@ -1215,10 +1213,10 @@ namespace reader {
 					prop.info = info;
 					prop.data = record.dwValueHnid;
 
-					STORYT_ASSERT((!m_properties.contains(prop.id)), "[ERROR] Duplicate property found");
+					STORYT_ASSERT((!m_properties.contains(prop.id)), "m_properties.contains(prop.id)");
 					m_properties[prop.id] = prop;
 				}
-				STORYT_ASSERT((m_properties.size() == m_bth.nrecords()), "[ERROR] Invalid size");
+				STORYT_ASSERT((m_properties.size() == m_bth.nrecords()), "m_properties.size() != m_bth.nrecords()");
 			}
 
 			template<typename PropIDType>
@@ -1234,7 +1232,7 @@ namespace reader {
 				}
 				else
 				{
-					STORYT_ASSERT(false, "[ERROR] Invalid PropIDType");
+					STORYT_ASSERT(false, "Invalid PropIDType");
 				}	
 			}
 
@@ -1264,7 +1262,7 @@ namespace reader {
 				const size_t singleRowSize = header.rgib.at(TCInfo::TCI_bm);
 				utils::ByteView view(blockBytes);
 				m_rows = view.entries<RowData>(blockBytes.size() / singleRowSize, singleRowSize, header);
-				STORYT_ASSERT((m_rows.size() == rowsPerBlock), "[ERROR] Invalid number of rows");
+				STORYT_ASSERT((m_rows.size() == rowsPerBlock), "m_rows.size() != rowsPerBlock");
 			}
 
 			[[nodiscard]] const RowData& at(size_t rowIdx) const
@@ -1328,7 +1326,7 @@ namespace reader {
 			[[nodiscard]] std::vector<RowEntry> getRow(TCRowID rowID)
 			{
 				const RowData& rowData = at(rowID);
-				STORYT_ASSERT((rowData.dwRowID == rowID.dwRowID), "[ERROR]");
+				STORYT_ASSERT((rowData.dwRowID == rowID.dwRowID), "rowData.dwRowID != rowID.dwRowID");
 				utils::ByteView view(rowData.data);
 				std::vector<RowEntry> entries;
 				for (const auto& col : m_header.rgTCOLDESC)
@@ -1350,9 +1348,10 @@ namespace reader {
 						}
 						else // Must be stored in a SubNodeBTree and Indexed using an NID
 						{
-							STORYT_ASSERT((m_subtree.has_value()), "[ERROR]");
+							STORYT_ASSERT((m_subtree.has_value()), "m_subtree was not initialized");
 							ndb::DataTree* datatree = m_subtree->getDataTree(core::NID(data));
-							STORYT_ASSERT((datatree != nullptr), "[ERROR]");
+							STORYT_ASSERT((datatree != nullptr), 
+								"Failed to find data tree in subnode tree using NID [{}]", core::NID(data).getNIDRaw());
 							entry.data = datatree->combineDataBlocks();
 						}
 						entries.push_back(entry);
@@ -1412,12 +1411,12 @@ namespace reader {
 				info.hidIndex = view.read<uint32_t>(4);
 				info.rgTCOLDESC = readTColDesc(view.read(bytes.size() - 22ULL));
 
-				STORYT_ASSERT((info.bType == types::BType::TC), "[ERROR] Invalid BType");
-				STORYT_ASSERT((info.cCols == info.rgTCOLDESC.size()), "[ERROR] Invalid size");
-				STORYT_ASSERT((info.hidIndex == 0), "[ERROR]");
+				STORYT_ASSERT((info.bType == types::BType::TC), "Invalid BType");
+				STORYT_ASSERT((info.cCols == info.rgTCOLDESC.size()), "info.cCols != info.rgTCOLDESC.size()");
+				STORYT_ASSERT((info.hidIndex == 0), "info.hidIndex != 0");
 				for (size_t i = 1; i < info.rgib.size(); ++i)
 				{
-					STORYT_ASSERT((info.rgib.at(i) >= info.rgib.at(i - 1)), "[ERROR]");
+					STORYT_ASSERT((info.rgib.at(i) >= info.rgib.at(i - 1)), "info.rgib.at(i) is not >= info.rgib.at(i - 1)");
 				}
 				return info;
 			}
@@ -1425,7 +1424,7 @@ namespace reader {
 			static std::vector<TColDesc> readTColDesc(const std::vector<types::byte_t>& bytes)
 			{
 				const size_t singleTColDescSize = 8;
-				STORYT_ASSERT((bytes.size() % singleTColDescSize == 0), "[ERROR] Invalid size");
+				STORYT_ASSERT((bytes.size() % singleTColDescSize == 0), "bytes.size() mod singleTColDescSize != 0");
 				std::vector<TColDesc> cols;
 
 				for (size_t i = 0; i < bytes.size() / singleTColDescSize; ++i)
@@ -1460,7 +1459,7 @@ namespace reader {
 						_loadRowMatrixFromSubNodeTree();
 					}
 					LOGIF((m_rowIDs.size() < m_rowsPerBlock),
-						"[WARN] The number of row IDs [%i] is less than the number of rows per block [%i]", 
+						"The number of row IDs [{}] is less than the number of rows per block [{}]", 
 						m_rowIDs.size(), m_rowsPerBlock);
 				}
 			}
@@ -1480,9 +1479,9 @@ namespace reader {
 				//static_assert(std::is_move_assignable_v<TableContext>, "TableContext must be move assignable");
 				static_assert(std::is_copy_constructible_v<TableContext>, "TableContext must be copy constructible");
 				//static_assert(std::is_copy_assignable_v<TableContext>, "TableContext must be copy assignable");
-				STORYT_ASSERT((m_hn.getBType() == types::BType::TC), "[ERROR]");
-				STORYT_ASSERT((m_bth.getKeySize() == 4), "[ERROR]");
-				STORYT_ASSERT((m_bth.getDataSize() == 4), "[ERROR]");
+				STORYT_ASSERT((m_hn.getBType() == types::BType::TC), "m_hn.getBType() != types::BType::TC");
+				STORYT_ASSERT((m_bth.getKeySize() == 4), "m_bth.getKeySize() != 4");
+				STORYT_ASSERT((m_bth.getDataSize() == 4), "m_bth.getDataSize() != 4");
 
 				if (!m_bth.empty())
 				{
@@ -1498,13 +1497,13 @@ namespace reader {
 				auto rowBlockBytes = m_hn.getAllocation(m_header.hnidRows.as<HID>());
 				m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
 				/// This check only works for HID allocated Row Matrices
-				STORYT_ASSERT((m_rowsPerBlock == m_bth.nrecords()), "[ERROR] Invalid number of rows per block");
+				STORYT_ASSERT((m_rowsPerBlock == m_bth.nrecords()), "Invalid number of rows per block");
 				m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
 			}
 
 			void _loadRowMatrixFromSubNodeTree() 
 			{
-				STORYT_ASSERT((m_subtree.has_value()), "[ERROR]");
+				STORYT_ASSERT((m_subtree.has_value()), "!m_subtree.has_value()");
 				ndb::DataTree* datatree = m_subtree->getDataTree(m_header.hnidRows.as<core::NID>());
 				m_rowsPerBlock = datatree->sizeOfDataBlockData(0) / m_header.rgib.at(TCInfo::TCI_bm);
 				for (size_t i = 0; i < datatree->nDataBlocks(); i++)
@@ -1513,7 +1512,7 @@ namespace reader {
 					{
 						/// Each block except the last one MUST have a size of 8192 bytes.
 						/// TODO its possible this check will fail because of variable padding
-						STORYT_ASSERT((datatree->sizeOfDataBlockData(i) + 16 == 8192), "[ERROR]");
+						STORYT_ASSERT((datatree->sizeOfDataBlockData(i) + 16 == 8192), "datatree->sizeOfDataBlockData(i) + 16 != 8192");
 					}
 
 					/// last block will potentially have less rows because its allowed

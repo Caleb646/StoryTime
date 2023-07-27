@@ -50,7 +50,7 @@ namespace reader
         void _open()
         {
             m_file.open(m_path, std::ios::binary);
-            STORYT_ASSERT(m_file.is_open(), "[ERROR] Failed to open [file] {}", path.c_str());
+            STORYT_ASSERT(m_file.is_open(), "[ERROR] Failed to open file [{}]", m_path.c_str());
         }
 
         core::Header _readHeader(std::ifstream& file)

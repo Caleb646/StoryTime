@@ -8,10 +8,6 @@
 #include <array>
 #include <stdexcept>
 
-
-#define STORYT_ASSERT(cond, ...) assert(cond)
-#define STORYT_VERIFY(cond, ...) if(!cond) throw std::runtime_error("")
-
 #if STORYT_BUILD_SPDLOG_ == true
     #pragma info "Compiling with SPDLog"
     #include <spdlog/spdlog.h>
@@ -40,6 +36,14 @@
     #define STORYT_WARNIF(cond, ...)
     #define STORYT_ERRORIF(cond, ...)
 #endif
+
+#ifdef NDEBUG
+    #define STORYT_ASSERT(cond, ...) STORYT_ERRORIF(!cond, __VA_ARGS__)
+#else
+    #define STORYT_ASSERT(cond, ...) assert(cond)
+#endif
+
+#define STORYT_VERIFY(cond, ...) if(!cond) throw std::runtime_error("")
 
 #ifndef READER_UTILS_H
 #define READER_UTILS_H
@@ -143,12 +147,12 @@ namespace reader::utils {
         To res = static_cast<To>(f);
         if constexpr (std::is_integral_v<From> && std::is_integral_v<To>)
         {
-            STORYT_ASSERT(std::cmp_equal(res, f), "[ERROR] Invalid Cast");
+            STORYT_ASSERT(std::cmp_equal(res, f), "Invalid Cast");
             return res;
         }  
         else
         {
-            static_assert(sizeof(From) <= sizeof(To), "[ERROR] Invalid Cast");
+            static_assert(sizeof(From) <= sizeof(To), "Invalid Cast");
             return res;
         } 
     }
@@ -580,7 +584,7 @@ namespace reader::utils {
         {
             bytes = pad(b, sizeof(T) - b.size());
         }
-        STORYT_ASSERT((sizeof(T) == bytes.size()), "[ERROR] toT_l T not [%i].", sizeof(T));
+        STORYT_ASSERT((sizeof(T) == bytes.size()), "Size of T [{}] != [{}] bytes.size()", sizeof(T), bytes.size());
         if constexpr (sizeof(T) == 1)
         {
             return static_cast<T>
@@ -632,7 +636,7 @@ namespace reader::utils {
         }
         else 
         {
-            STORYT_ASSERT(false, "[ERROR] Bytes could not be converted");
+            STORYT_ASSERT(false, "Bytes could not be converted");
             return T(-1);
         }
     }
@@ -651,7 +655,7 @@ namespace reader::utils {
     template<typename T>
     std::vector<types::byte_t> slice(const std::vector<types::byte_t>& v, T start, T end, T size)
     {
-        STORYT_ASSERT((end - start == size), "[ERROR] Invalid slice size [%i] != [%i]", end - start, size);
+        STORYT_ASSERT((end - start == size), "Invalid slice size [{}] != [{}]", end - start, size);
         return std::vector<types::byte_t>(v.begin() + start, v.begin() + end);
     }
 
@@ -666,7 +670,7 @@ namespace reader::utils {
         std::ifstream& file, 
         T numBytes)
     {
-        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "Failed to read file");
         std::vector<types::byte_t> res(numBytes, '\0');
         file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
         return res;
@@ -686,11 +690,11 @@ namespace reader::utils {
         uint64_t position,
         size_t numBytes)
     {
-        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "Failed to read file");
         std::vector<types::byte_t> res(numBytes, '\0');
         file.seekg(position, std::ios::beg);
         file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
-        STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file]");
+        STORYT_ASSERT((file.fail() == false), "Failed to read file");
         return res;
     }
 
@@ -703,7 +707,7 @@ namespace reader::utils {
         explicit ByteView(const std::vector<types::byte_t>& bytes, size_t start)
             : m_bytes(bytes), m_start(start) 
         {
-            STORYT_ASSERT((start < bytes.size()), "[ERROR]");
+            STORYT_ASSERT((start < bytes.size()), "Start [{}] must <= bytes.size() [{}]", start, bytes.size());
         }
         ByteView(const ByteView&) = delete;
         ByteView(ByteView&&) = delete;
@@ -735,7 +739,7 @@ namespace reader::utils {
         template<typename PrimitiveType>
         PrimitiveType read(size_t size)
         {
-            STORYT_ASSERT((sizeof(PrimitiveType) == size));
+            STORYT_ASSERT((sizeof(PrimitiveType) == size), "PrimitiveType Size [{}] != Size [{}]", sizeof(PrimitiveType), size);
             const size_t start = m_start;
             m_start += size;
             return slice(m_bytes, start, start + size, size, toT_l<PrimitiveType>);
@@ -783,7 +787,7 @@ namespace reader::utils {
         template<typename RetType = std::vector<types::byte_t>>
         RetType takeLast(size_t nBytes)
         {
-            STORYT_ASSERT((nBytes <= (m_bytes.size() - m_start)), "[ERROR]");
+            STORYT_ASSERT((nBytes <= (m_bytes.size() - m_start)), "takeLast");
             const size_t offset = m_bytes.size() - m_start - nBytes;
             skip(offset);
             if constexpr (std::is_same_v<RetType, std::vector<types::byte_t>>)
