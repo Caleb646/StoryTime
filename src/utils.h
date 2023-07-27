@@ -535,7 +535,6 @@ namespace reader::utils {
             case 0x3007: return types::PidTagType::CreationTime;
             case 0x3008: return types::PidTagType::LastModificationTime;
             case 0x300b: return types::PidTagType::SearchKey;
-
             case 0x0c15: return types::PidTagType::RecipientType;
             case 0x0E0F: return types::PidTagType::Responsibility;
             case 0x0FFE: return types::PidTagType::ObjectType;
@@ -545,11 +544,15 @@ namespace reader::utils {
             case 0x3900: return types::PidTagType::DisplayType;
             case 0x39FF: return types::PidTagType::SevenBitDisplayName;
             case 0x3A40: return types::PidTagType::SendRichInfo;
-
+            case 0x0E20: return types::PidTagType::AttachSize;
+            case 0x3705: return types::PidTagType::AttachMethod;
+            case 0x370E: return types::PidTagType::AttachMimeTag;
+            case 0x3704: return types::PidTagType::AttachFileName;
+            case 0x370B: return types::PidTagType::RenderingPosition;
+            case 0x3701: return types::PidTagType::AttachDataBinaryOrDataObject;
+            case 0x3702: return types::PidTagType::AttachEncoding;
             default:
-                //ASSERT(false, "Invalid PidTagType");
-                //return types::PidTagType::Unknown;
-                LOG("[WARNING] Unknown PidTagType: %X returned", id);
+                STORYT_ERROR("Unknown PidTagType: [{}] returned", id);
                 return types::PidTagType::Unknown;
         }
     }

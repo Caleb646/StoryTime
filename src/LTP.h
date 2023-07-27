@@ -995,6 +995,12 @@ namespace reader {
 				return str;
 			}
 
+			[[nodiscard]] int32_t asPTInt32() const
+			{
+				utils::ByteView view(data);
+				return view.read<int32_t>(4U);
+			}
+
 			template<typename PropType>
 			[[nodiscard]] PropType as() const
 			{
@@ -1047,6 +1053,19 @@ namespace reader {
 		public:
 			using PropertyID_t = uint32_t;
 		public:
+			static PropertyContext Init(
+				core::NID nid,
+				ndb::DataTree* datatree,
+				const ndb::SubNodeBTree* const subTree
+			)
+			{
+				STORYT_ASSERT((datatree != nullptr), "Cannot create a PropertyContext with a nullptr DataTree");
+				if (subTree != nullptr)
+				{
+					return PropertyContext(nid, HN::Init(nid, std::move(*datatree)), *subTree);
+				}
+				return PropertyContext(nid, HN::Init(nid, std::move(*datatree)));
+			}
 
 			static PropertyContext Init(
 				core::NID nid, 
@@ -1058,7 +1077,8 @@ namespace reader {
 				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
 				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
-				return PropertyContext(nid, ndb, HN::Init(nid, ndb), subTree);
+				//return PropertyContext(nid, ndb, HN::Init(nid, ndb), subTree);
+				return PropertyContext(nid, HN::Init(nid, ndb), subTree);
 			}
 
 			static PropertyContext Init(
@@ -1071,7 +1091,8 @@ namespace reader {
 				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
 				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
 				const auto nbt = ndb->get(nid);
-				return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
+				//return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
+				return PropertyContext(nid, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt->bidSub));
 			}
 
 			auto begin()
@@ -1118,20 +1139,30 @@ namespace reader {
 			}
 	
 		private:
+			PropertyContext(core::NID nid, HN&& hn)
+				: m_nid(nid), m_hn(std::move(hn)), m_bth(m_hn, m_hn.getHeader().hidUserRoot) 
+			{
+				_init();
+			}
+
 			PropertyContext(
 				core::NID nid, 
-				core::Ref<const ndb::NDB> ndb, HN&& hn, 
+				HN&& hn, 
 				const ndb::SubNodeBTree& subTree
 			)
 				: 
 				m_nid(nid), 
-				m_ndb(ndb), 
 				m_hn(hn), 
 				m_bth(m_hn, m_hn.getHeader().hidUserRoot),
 				// The SubNodeTree can afford to be copied 
 				// because at this point nothing has been read from the file.
 				// But it can't be std::move because other TCs or PCs may depend on it.
 				m_subtree(subTree)
+			{
+				_init();
+			}
+
+			void _init()
 			{
 				STORYT_ASSERT((m_hn.getBType() == types::BType::PC), "[ERROR] Invalid BType");
 				STORYT_ASSERT((m_bth.getKeySize() == 2), "[ERROR]");
@@ -1149,15 +1180,22 @@ namespace reader {
 				}
 				else if (prop.DataIsInHeap()) // HID
 				{
-					HID id = HID(prop.data);
+					const HID id = HID(prop.data);
 					prop.data = m_hn.getAllocation(id);
 				}
 				else if (prop.DataIsInSubNodeTree()) // NID
 				{
-					const core::NID nid(prop.data);
-					ndb::DataTree* dataPtr = m_subtree.getDataTree(nid);
-					STORYT_ASSERT((dataPtr != nullptr), "[ERROR]");
-					prop.data = dataPtr->combineDataBlocks();
+					if (m_subtree.has_value())
+					{
+						const core::NID nid(prop.data);
+						ndb::DataTree* dataPtr = m_subtree->getDataTree(nid);
+						STORYT_ASSERT((dataPtr != nullptr), "[ERROR]");
+						prop.data = dataPtr->combineDataBlocks();
+					}
+					else
+					{
+						STORYT_ERROR("Attempted to get a DataTree from an unintialized SubNodeTree");
+					}	
 				}
 				else
 				{
@@ -1203,8 +1241,8 @@ namespace reader {
 		private:
 			std::map<PropertyID_t, Property> m_properties{};
 			core::NID m_nid;
-			core::Ref<const ndb::NDB> m_ndb;
-			ndb::SubNodeBTree m_subtree;
+			//core::Ref<const ndb::NDB> m_ndb;
+			std::optional<ndb::SubNodeBTree> m_subtree;
 			HN m_hn;
 			BTreeHeap m_bth; /// m_bth has to be initialized after m_hn
 			

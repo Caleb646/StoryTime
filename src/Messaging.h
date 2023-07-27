@@ -22,6 +22,79 @@
 
 namespace reader::msg
 {
+
+	class Attachment
+	{
+	public:
+		explicit Attachment(ltp::PropertyContext&& pc)
+			: m_pc(std::move(pc)) 
+		{
+			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachSize)), "AttachSize must be present on valid Attachment");
+			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachMethod)), "AttachMethod must be present on valid Attachment");
+			STORYT_INFO("Attachment Mime Type Header [{}]", getMimeType());
+		}
+		[[nodiscard]] size_t getSize()
+		{
+			return m_pc.getProperty(types::PidTagType::AttachSize).asPTInt32();
+		}
+		[[nodiscard]] size_t getMethod()
+		{
+			return m_pc.getProperty(types::PidTagType::AttachMethod).asPTInt32();
+		}
+
+		[[nodiscard]] std::string getMimeType()
+		{
+			return m_pc.getProperty(types::PidTagType::AttachMimeTag).asPTString().data;
+		}
+
+	private:
+		ltp::PropertyContext m_pc;
+	};
+
+	class AttachmentTable
+	{
+	public:
+		/// (optional) The subnode is an Attachment TABLE
+		static constexpr core::NID ATTACH_TC_NID{ 0x671 };
+		/// (optional) The subnode is an Attachment OBJECT
+		static constexpr core::NID ATTACH_NID{ 0x8025 };
+	public:
+		static std::optional<AttachmentTable> Init(ndb::SubNodeBTree& messageObjectSubTree)
+		{
+			std::optional<ltp::TableContext> attachTable = ltp::TableContext::Init(ATTACH_TC_NID, messageObjectSubTree);
+			if (attachTable.has_value())
+			{
+				return AttachmentTable(std::move(*attachTable), messageObjectSubTree);
+			}
+			return std::nullopt;
+		}
+	private:
+		AttachmentTable(ltp::TableContext&& tc, ndb::SubNodeBTree& messageObjectSubTree)
+			: m_tc(std::move(tc))
+		{
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)), "");
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachFileName, types::PropertyType::String)), "");
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachMethod, types::PropertyType::Integer32)), "");
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::RenderingPosition, types::PropertyType::Integer32)), "");
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "");
+			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "");
+
+			m_attachments.reserve(m_tc.nRows());
+			for (const auto& rowID : m_tc.getRowIDs())
+			{
+				const core::NID attachNID = core::NID(rowID.dwRowID);
+				ndb::DataTree* datatree = messageObjectSubTree.getDataTree(attachNID);
+				ndb::SubNodeBTree* childSubTree = messageObjectSubTree.getNestedSubNodeTree(attachNID);
+				ltp::PropertyContext pc = ltp::PropertyContext::Init(attachNID, datatree, childSubTree);
+				m_attachments.push_back(Attachment(std::move(pc)));
+			}
+			STORYT_ASSERT((m_tc.nRows() == m_attachments.size()), "The number of rows in the row index and attachments must be equal");
+		}
+	private:
+		ltp::TableContext m_tc;
+		std::vector<Attachment> m_attachments;
+	};
+
 	class MessageObject
 	{
 	public:
@@ -45,8 +118,7 @@ namespace reader::msg
 				STORYT_INFO(pc.getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data.c_str());
 
 				std::optional<ltp::TableContext> recip = ltp::TableContext::Init(RECIPIENT_TC_NID, messageSubNodeTree);
-				std::optional<ltp::TableContext> attachment = std::nullopt;//ltp::TableContext::Init(ATTACH_NID, messageSubNodeTree);
-				std::optional<ltp::TableContext> attachmentTable = ltp::TableContext::Init(ATTACH_TC_NID, messageSubNodeTree);
+				std::optional<AttachmentTable> attachmentTable = AttachmentTable::Init(messageSubNodeTree);
 
 				STORYT_ASSERT((pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)), "[ERROR]");
 				STORYT_ASSERT((pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
@@ -84,7 +156,6 @@ namespace reader::msg
 					ndb,
 					std::move(pc),
 					std::move(recip),
-					std::move(attachment),
 					std::move(attachmentTable)
 				);
 			}
@@ -107,11 +178,9 @@ namespace reader::msg
 			core::Ref<const ndb::NDB> ndb, 
 			std::optional<ltp::PropertyContext> pc,
 			std::optional<ltp::TableContext> recip,
-			std::optional<ltp::TableContext> attachment,
-			std::optional<ltp::TableContext> attachmentTable
+			std::optional<AttachmentTable> attachmentTable
 			)
-			: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc)), m_recip(std::move(recip)),
-			m_attachment(std::move(attachment)), m_attachmentTable(std::move(attachmentTable))
+			: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc)), m_recip(std::move(recip)), m_attachmentTable(std::move(attachmentTable))
 		{
 
 		}
@@ -121,15 +190,9 @@ namespace reader::msg
 		std::optional<ndb::SubNodeBTree> m_subtree;
 		std::optional<ltp::PropertyContext> m_pc;
 		std::optional<ltp::TableContext> m_recip;
-		std::optional<ltp::TableContext> m_attachment;
-		std::optional<ltp::TableContext> m_attachmentTable;
-
+		std::optional<AttachmentTable> m_attachmentTable;
 		/// (required) The subnode is a Message Recipient Table
 		static constexpr core::NID RECIPIENT_TC_NID{ 0x692 };		
-		/// (optional) The subnode is an Attachment TABLE
-		static constexpr core::NID ATTACH_TC_NID{ 0x671 };
-		/// (optional) The subnode is an Attachment OBJECT
-		static constexpr core::NID ATTACH_NID{ 0x8025 };
 	};
 	
 	/**

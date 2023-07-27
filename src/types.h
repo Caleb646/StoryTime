@@ -201,6 +201,20 @@ namespace reader::types {
         SevenBitDisplayName = 0x39FF, //PtypString PidTag 7 - bit Display name.
         SendRichInfo = 0x3A40, //PtypBoolean PidTag Send Rich info for recipient.
 
+
+        AttachSize      = 0x0E20, // PtypInteger32
+        AttachMethod    = 0x3705, // PtypInteger32
+        AttachMimeTag   = 0x370E, // PtypeString - Contains a content-type MIME Header
+
+        AttachFileName      = 0x3704, // PtypeString - File name of Attachment object
+        RenderingPosition   = 0x370B, // PtypeInteger32 - Rendering position of Attachment Object
+
+        /// Data Binary = PtypeBinary - Contains the contents of the file to be attached
+        /// Data Object = PtypeObject - Contains the binary representation of the Attachment object
+        AttachDataBinaryOrDataObject    = 0x3701, 
+        AttachEncoding                  = 0x3702, // PtypeBinary - Contains encoding information about the Attachment Object
+
+
         // PidTagTransportMessageHeaders = 0x007D // PtypeString - Contains transport specific message envelope information for email
         // PidTagSubjectPrefix           = 0x003D // PtypeString - Contains the prefix for the subject of the message
         // PidTagSentRepresentiveAddressType = 0x0064 // PtypeString - Contains an email address type
