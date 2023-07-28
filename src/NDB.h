@@ -1,15 +1,12 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <string>
 #include <fstream>
 #include <type_traits>
 #include <utility>
-#include <map>
 #include <functional>
 #include <unordered_map>
-#include <format>
 #include <array>
 #include <optional>
 

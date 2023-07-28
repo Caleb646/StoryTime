@@ -1,5 +1,4 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <string>
@@ -8,12 +7,10 @@
 #include <array>
 #include <stdexcept>
 
+// NOLINTBEGIN
+
 #if STORYT_BUILD_SPDLOG_ == true
-    #pragma info "Compiling with SPDLog"
     #include <spdlog/spdlog.h>
-    #define LOG(fmt, ...) reader::utils::old_log(__LINE__, fmt, __VA_ARGS__)
-    #define LOGIF(cond, fmt, ...) if(cond) LOG(fmt, __VA_ARGS__)
-    #define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
     #define STORYT_TRACE(...) spdlog::trace(__VA_ARGS__)
     #define STORYT_INFO(...) spdlog::info(__VA_ARGS__)
     #define STORYT_WARN(...) spdlog::warn(__VA_ARGS__)
@@ -23,10 +20,6 @@
     #define STORYT_WARNIF(cond, ...) if(cond) spdlog::warn(__VA_ARGS__)
     #define STORYT_ERRORIF(cond, ...) if(cond) spdlog::error(__VA_ARGS__)
 #else
-    #pragma info "Compiling with OUT SPDLog"
-    #define LOG(fmt, ...) reader::utils::old_log(__LINE__, fmt, __VA_ARGS__)
-    #define LOGIF(con, fmt, ...) if(con) LOG(fmt, __VA_ARGS__)
-    #define NEW_LOG(...) reader::utils::log(__LINE__, __VA_ARGS__)
     #define STORYT_TRACE(...)
     #define STORYT_INFO(...)
     #define STORYT_WARN(...)
@@ -48,10 +41,9 @@
 #ifndef READER_UTILS_H
 #define READER_UTILS_H
 
+// NOLINTEND
+
 #include "types.h"
-
-
-
 
 namespace reader::utils {
 
@@ -124,22 +116,6 @@ namespace reader::utils {
         0x0001,
         0x000D,
     };
-
-    void old_log(int lineNumber, const char* fmt, ...)
-    {
-        //char buffer[1000]{};
-        va_list vararglist;
-        va_start(vararglist, fmt);
-        vprintf(fmt, vararglist);
-        va_end(vararglist);
-        printf(" at line [%i]\n", lineNumber);
-    }
-
-    template<typename... Args>
-    void log(int line, Args&&... args)
-    {
-        std::clog << std::format(std::make_format_args(args...)) << "\n";
-    }
 
     template<typename To, typename From>
     To cast(From f)
@@ -672,7 +648,7 @@ namespace reader::utils {
     {
         STORYT_ASSERT((file.fail() == false), "Failed to read file");
         std::vector<types::byte_t> res(numBytes, '\0');
-        file.read((char*)res.data(), sizeof(types::byte_t) * res.size());
+        file.read(reinterpret_cast<char*>(res.data()), sizeof(types::byte_t) * res.size());
         return res;
     }
 
@@ -869,6 +845,13 @@ namespace reader::utils {
     private:
         std::array<DataType, Size> m_data{};
     };
+
+    std::string UTF16BytesToString(const std::vector<types::byte_t>& bytes)
+    {
+        ByteView view(bytes);
+        std::vector<uint8_t> characters = view.read<uint8_t>(bytes.size() / 2U, 1U, 1U);
+        return std::string(characters.begin(), characters.end());
+    }
 
 
 

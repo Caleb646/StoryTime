@@ -1,5 +1,4 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <string>
@@ -233,26 +232,28 @@ namespace reader::types {
         struct Info
         {
             uint32_t pid{};
-            uint32_t type{};
+            PropertyType type{};
         };
         /// PTString
-        static constexpr Info MessageBody = Info{ 0x1000, 0x001F };
+        static constexpr Info MessageBody = Info{ 0x1000, PropertyType::String };
         /// PTString
-        static constexpr Info BodyHtml = Info{ 0x1013, 0x001F }; 
+        static constexpr Info BodyHtml = Info{ 0x1013, PropertyType::String };
         /// PTString
-        static constexpr Info MessageClass = Info{ 0x001A, 0x001F }; 
+        static constexpr Info MessageClass = Info{ 0x001A, PropertyType::String };
         /// PTString
-        static constexpr Info MessageSubject = Info{ 0x0037, 0x001F }; 
+        static constexpr Info MessageSubject = Info{ 0x0037, PropertyType::String };
         /// Integer32 FROM = 0x00, TO = 0x01, CC = 0x02, BCC = 0x03
-        static constexpr Info RecipientType = Info{ 0x0C15, 0x0003 }; 
+        static constexpr Info RecipientType = Info{ 0x0C15, PropertyType::Integer32 }; 
         /// Binary
-        static constexpr Info EntryID = Info{ 0x0FFF, 0x0102 }; 
+        static constexpr Info EntryID = Info{ 0x0FFF, PropertyType::Binary }; 
         /// Binary - Contains a unique binary-comparable key that identifies this object
-        static constexpr Info SearchKey = Info{ 0x300B, 0x0102 }; 
+        static constexpr Info SearchKey = Info{ 0x300B, PropertyType::Binary };
         /// PTString
-        static constexpr Info AddressType = Info{ 0x3002, 0x001F }; 
+        static constexpr Info AddressType = Info{ 0x3002, PropertyType::String };
         /// PTString
-        static constexpr Info EmailAddress = Info{ 0x3003, 0x001F }; 
+        static constexpr Info RecipEmailAddress = Info{ 0x3003, PropertyType::String };
+        /// PTString
+        static constexpr Info SenderEmailAddress = Info{ 0x0C1F, PropertyType::String };
     };
 } // namespace::reader::types
 

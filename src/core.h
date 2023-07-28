@@ -1,5 +1,4 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <string>

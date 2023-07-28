@@ -22,8 +22,8 @@ namespace reader
     class PSTReader
     {
     public:
-        PSTReader(const std::string& path) 
-            : m_path(path) {}
+        explicit PSTReader(std::string path) 
+            : m_path(std::move(path)) {}
         ~PSTReader()
         {
             if (m_file.is_open())
@@ -37,11 +37,11 @@ namespace reader
             _open();
             m_ndb.reset(new ndb::NDB(m_file, _readHeader(m_file)));
             m_ltp.reset(new ltp::LTP(core::Ref<const ndb::NDB>{*m_ndb}));
-            m_msg.reset(new msg::Messaging(core::Ref<const ndb::NDB>{*m_ndb}, core::Ref<const ltp::LTP>{*m_ltp}));
+            m_msg.reset(new Messaging(core::Ref<const ndb::NDB>{*m_ndb}, core::Ref<const ltp::LTP>{*m_ltp}));
         }
 
         template<typename FolderID>
-        msg::Folder* getFolder(FolderID folderID)
+        Folder* getFolder(const FolderID& folderID)
         {
             return m_msg->getFolder(folderID);
         }
@@ -86,7 +86,7 @@ namespace reader
                  Outlook of version that supports Windows Information Protection (WIP). 
                  The data MAY have been protected by WIP.  
             */
-            std::uint16_t wVer = utils::slice(bytes, 10, 12, 2, utils::toT_l<std::uint16_t>);
+            const std::uint16_t wVer = utils::slice(bytes, 10, 12, 2, utils::toT_l<std::uint16_t>);
             STORYT_ASSERT((wVer >= 23), "wVer [{}] was not greater than 23", wVer);
 
             /*
@@ -94,17 +94,17 @@ namespace reader
             * the format described in this document is 19. Creators of a new PST file 
             * based on this document SHOULD initialize this value to 19. 
             */ 
-            std::uint16_t wVerClient = utils::slice(bytes, 12, 14, 2, utils::toT_l<std::uint16_t>);
+            const std::uint16_t wVerClient = utils::slice(bytes, 12, 14, 2, utils::toT_l<std::uint16_t>);
             STORYT_ASSERT((wVerClient == 19), "wVerClient != 19 but [{}]", wVerClient);
 
             /* bPlatformCreate (1 types::byte_t): This value MUST be set to 0x01. 
             */ 
-            std::uint8_t bPlatformCreate = utils::slice(bytes, 14, 15, 1, utils::toT_l<std::uint8_t>);
+            const std::uint8_t bPlatformCreate = utils::slice(bytes, 14, 15, 1, utils::toT_l<std::uint8_t>);
             STORYT_ASSERT((bPlatformCreate == 0x01), "bPlatformCreate != 0x01 but [{}]", bPlatformCreate);
 
             /* bPlatformAccess (1 types::byte_t): This value MUST be set to 0x01. 
             */
-            std::uint8_t bPlatformAccess = utils::slice(bytes, 15, 16, 1, utils::toT_l<std::uint8_t>);
+            const std::uint8_t bPlatformAccess = utils::slice(bytes, 15, 16, 1, utils::toT_l<std::uint8_t>);
             STORYT_ASSERT((bPlatformAccess == 0x01), "bPlatformCreate != 0x01 but [{}]", bPlatformAccess);
 
             /* dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
@@ -151,7 +151,7 @@ namespace reader
            *   NID_TYPE_ASSOC_MESSAGE 32768 (0x8000) 
            *   Any other NID_TYPE 1024 (0x400)
            */
-           std::vector<types::byte_t> rgnidsBytes = utils::slice(bytes, 44, 172, 128);
+           std::vector<types::byte_t> rgnidsBytes = utils::slice(bytes, 44U, 172U, 128U);
            core::NID nids[32];
 
            for (size_t i = 0; i < 32; i++)
@@ -282,7 +282,7 @@ namespace reader
         std::string m_path;
         std::unique_ptr<ndb::NDB> m_ndb{nullptr};
         std::unique_ptr<ltp::LTP> m_ltp{nullptr};
-        std::unique_ptr<msg::Messaging> m_msg{nullptr};
+        std::unique_ptr<Messaging> m_msg{nullptr};
     };
 }
 

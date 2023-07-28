@@ -1,5 +1,4 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <string>
@@ -964,6 +963,7 @@ namespace reader {
 			types::PropertyType propType{ types::PropertyType::Null };
 			utils::PTInfo info{};
 			std::vector<types::byte_t> data{};
+			bool isLoaded{ false };
 
 		public:
 			[[nodiscard]] PTBinary asPTBinary() const
@@ -979,18 +979,14 @@ namespace reader {
 
 			[[nodiscard]] PTString asPTString() const
 			{
-
 				STORYT_ASSERT(!info.isMv, "Property is not a PTString");
 				STORYT_ASSERT(!info.isFixed, "Property is not a PTString");
 				STORYT_ASSERT((info.singleEntrySize == 2ULL), "Property is not a PTString");
 				STORYT_ASSERT((data.size() % 2ULL == 0ULL), "Property is not a PTString");
 				STORYT_ASSERT((data.size() != 0ULL), "Property is not a PTString");
-
-				utils::ByteView view(data);
-				std::vector<uint8_t> characters = view.read<uint8_t>(data.size() / 2U, 1U, 1U);
 				PTString str{};
 				str.id = id;
-				str.data = std::string(characters.begin(), characters.end());
+				str.data = utils::UTF16BytesToString(data);
 				return str;
 			}
 
@@ -1172,7 +1168,7 @@ namespace reader {
 			void _loadProperty(uint32_t propID)
 			{
 				Property& prop = m_properties.at(propID);
-				if (prop.DataIsInHNID() || !prop.data.size() == 4) // Data Value or Data for prop has already been loaded
+				if (prop.isLoaded || prop.DataIsInHNID()) // Data Value or Data for prop has already been loaded
 				{
 					return;
 				}
@@ -1199,6 +1195,7 @@ namespace reader {
 				{
 					STORYT_ASSERT(false, "Invalid Property");
 				}
+				prop.isLoaded = true;
 			}
 
 			void _loadMetaProps()
@@ -1237,7 +1234,7 @@ namespace reader {
 			}
 
 		private:
-			std::map<PropertyID_t, Property> m_properties{};
+			std::unordered_map<PropertyID_t, Property> m_properties{};
 			core::NID m_nid;
 			//core::Ref<const ndb::NDB> m_ndb;
 			std::optional<ndb::SubNodeBTree> m_subtree;
@@ -1325,6 +1322,7 @@ namespace reader {
 
 			[[nodiscard]] std::vector<RowEntry> getRow(TCRowID rowID)
 			{
+				STORYT_ASSERT(m_rowMatrixIsLoaded, "Trying to get a row from a TableContext that has not loaded its Row Matrix");
 				const RowData& rowData = at(rowID);
 				STORYT_ASSERT((rowData.dwRowID == rowID.dwRowID), "rowData.dwRowID != rowID.dwRowID");
 				utils::ByteView view(rowData.data);
@@ -1447,7 +1445,7 @@ namespace reader {
 
 			void load()
 			{
-				if (!m_bth.empty())
+				if (!m_bth.empty() && !m_rowMatrixIsLoaded)
 				{
 					if (m_header.hnidRows.isHID()) // Row Matrix is in the HN
 					{
@@ -1462,6 +1460,7 @@ namespace reader {
 						"The number of row IDs [{}] is less than the number of rows per block [{}]", 
 						m_rowIDs.size(), m_rowsPerBlock);
 				}
+				m_rowMatrixIsLoaded = true;
 			}
 
 		private:
@@ -1531,6 +1530,7 @@ namespace reader {
 			}
 
 		private:
+			bool m_rowMatrixIsLoaded{false};
 			std::optional<ndb::SubNodeBTree> m_subtree;
 			uint64_t m_rowsPerBlock{0};
 			std::vector<RowBlock> m_rowBlocks;

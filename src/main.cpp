@@ -7,6 +7,17 @@ int main()
     //reader::PSTReader reader("C:\\Users\\caleb\\Documents\\Outlook Files\\Outlook.pst");
     reader.read();
 
-    reader::msg::Folder* folder = reader.getFolder(std::string("Inbox"));
+    reader::Folder* folder = reader.getFolder(std::string("Inbox"));
+    std::vector<reader::MessageObject> messages = folder->getNMessages(0, 2);
+
+    for (auto& msg : messages)
+    {
+        STORYT_INFO("Subject: {}\nFrom: {}\nHas Attachments: {}\n", msg.getSubject(), msg.getSender(), msg.hasAttachments());
+
+        for (auto& recip : msg.getRecipients())
+        {
+            std::cout << recip << "\n";
+        }
+    }
     return 0;
 }

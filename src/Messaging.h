@@ -1,12 +1,10 @@
 #include <iostream>
-#include <stdarg.h>
 #include <cassert>
 #include <vector>
 #include <array>
 #include <string>
 #include <fstream>
 #include <utility>
-#include <map>
 #include <unordered_map>
 #include <optional>
 #include <regex>
@@ -20,9 +18,8 @@
 #ifndef READER_MESSAGING_H
 #define READER_MESSAGING_H
 
-namespace reader::msg
+namespace reader
 {
-
 	class Attachment
 	{
 	public:
@@ -35,11 +32,11 @@ namespace reader::msg
 				"AttachMethod must be present on valid Attachment");
 			STORYT_INFO("Attachment Mime Type Header [{}]", getMimeType());
 		}
-		[[nodiscard]] size_t getSize()
+		[[nodiscard]] int32_t getSize()
 		{
 			return m_pc.getProperty(types::PidTagType::AttachSize).asPTInt32();
 		}
-		[[nodiscard]] size_t getMethod()
+		[[nodiscard]] int32_t getMethod()
 		{
 			return m_pc.getProperty(types::PidTagType::AttachMethod).asPTInt32();
 		}
@@ -92,12 +89,16 @@ namespace reader::msg
 			std::optional<ltp::TableContext> attachTable = ltp::TableContext::Init(ATTACH_TC_NID, messageObjectSubTree);
 			if (attachTable.has_value())
 			{
-				return AttachmentTable(std::move(*attachTable), messageObjectSubTree);
+				return std::optional(AttachmentTable(std::move(*attachTable), messageObjectSubTree));
 			}
-			return std::nullopt;
+			return std::optional<AttachmentTable>(std::nullopt);
+		}
+		[[nodiscard]] std::vector<Attachment>* getAttachments()
+		{
+			return &m_attachments;
 		}
 	private:
-		AttachmentTable(ltp::TableContext&& tc, ndb::SubNodeBTree& messageObjectSubTree)
+		explicit AttachmentTable(ltp::TableContext&& tc, ndb::SubNodeBTree& messageObjectSubTree)
 			: m_tc(std::move(tc))
 		{
 			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)), 
@@ -223,6 +224,100 @@ namespace reader::msg
 			}
 		}
 
+		[[nodiscard]] bool hasAttachments() const
+		{
+			return m_attachmentTable.has_value();
+		}
+
+		[[nodiscard]] std::vector<Attachment>* getAttachments()
+		{
+			if (hasAttachments())
+			{
+				return m_attachmentTable->getAttachments();
+			}
+			STORYT_WARN("Message Object with NID [{}] does not have any attachments", m_nid.getNIDRaw());
+			return nullptr;
+		}
+
+		[[nodiscard]] std::string getSender()
+		{
+			if (m_pc.has_value())
+			{
+				auto emailInfo = types::PidTagTypeCombo::SenderEmailAddress;
+				ltp::Property email = m_pc->getProperty(emailInfo.pid);
+				if (email.propType == emailInfo.type)
+				{
+					return email.asPTString().data;
+				}
+				STORYT_ASSERT(false, "Failed to find From Email Address in getFrom for Message with NID [{}]", m_nid.getNIDRaw());
+				return {};
+			}
+			STORYT_ASSERT(false, "Failed to getFrom for Message with NID [{}]", m_nid.getNIDRaw());
+			return {};
+		}
+
+		[[nodiscard]] std::vector<std::string> getRecipients()
+		{
+			std::vector<std::string> emailAddresses{};
+			if (m_recip.has_value())
+			{
+				m_recip->load(); // Make sure recip Row Matrix is loaded
+				emailAddresses.reserve(m_recip->nRows());
+				auto emailInfo = types::PidTagTypeCombo::RecipEmailAddress;
+				for (const auto& rowID : m_recip->getRowIDs())
+				{
+					const std::vector<ltp::RowEntry> rowEntries = m_recip->getRow(rowID);
+					for (const auto& entry : rowEntries)
+					{
+						if (entry.propID == emailInfo.pid && entry.propType == emailInfo.type)
+						{
+							emailAddresses.push_back(utils::UTF16BytesToString(entry.data));
+						}
+					}
+				}
+				return emailAddresses;
+			}
+			STORYT_ASSERT(false, "Failed to getRecipients for Message with NID [{}]", m_nid.getNIDRaw());
+			return emailAddresses;
+		}
+
+		[[nodiscard]] std::string getSubject()
+		{
+			if (m_pc.has_value())
+			{
+				return m_pc->getProperty(types::PidTagTypeCombo::MessageSubject.pid).asPTString().data;
+			}
+			STORYT_ASSERT(false, "Failed to getSubject for Message with NID [{}]", m_nid.getNIDRaw());
+			return {};
+		}
+
+		[[nodiscard]] std::string getBody()
+		{
+			if (m_pc.has_value())
+			{
+				auto plainTextBodyInfo = types::PidTagTypeCombo::MessageBody;
+				auto htmlBodyInfo = types::PidTagTypeCombo::BodyHtml;
+				if (m_pc->valid(plainTextBodyInfo.pid, plainTextBodyInfo.type)) // Try to get the message body from the plain text property first
+				{
+					const ltp::Property prop = m_pc->getProperty(plainTextBodyInfo.pid);
+					if (prop.propType == plainTextBodyInfo.type);
+					{
+						return prop.asPTString().data;
+					}
+				}
+				else // If the plain text body is present then try the HTML Body
+				{
+					const ltp::Property prop = m_pc->getProperty(plainTextBodyInfo.pid);
+					if (prop.propType == plainTextBodyInfo.type);
+					{
+						return prop.asPTString().data;
+					}
+				}
+			}
+			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}]", m_nid.getNIDRaw());
+			return {};
+		}
+
 	private:
 		MessageObject(
 			core::NID nid,
@@ -237,14 +332,16 @@ namespace reader::msg
 			std::optional<ltp::TableContext> recip,
 			std::optional<AttachmentTable> attachmentTable
 			)
-			: m_nid(nid), m_ndb(ndb), m_pc(std::move(pc)), m_recip(std::move(recip)), m_attachmentTable(std::move(attachmentTable))
-		{
+			: 
+			m_nid(nid), 
+			m_ndb(ndb), 
+			m_pc(std::move(pc)), 
+			m_recip(std::move(recip)), 
+			m_attachmentTable(std::move(attachmentTable)) {}
 
-		}
 	private:
 		core::NID m_nid;
 		core::Ref<const ndb::NDB> m_ndb;
-		std::optional<ndb::SubNodeBTree> m_subtree;
 		std::optional<ltp::PropertyContext> m_pc;
 		std::optional<ltp::TableContext> m_recip;
 		std::optional<AttachmentTable> m_attachmentTable;
@@ -385,26 +482,32 @@ namespace reader::msg
 			return m_contents.nRows();
 		}
 
-		[[nodiscard]] std::string getName()
+		[[nodiscard]] const std::string& getName()
 		{
-			return m_normal.getProperty<ltp::PTString>(types::PidTagType::DisplayName).data;
+			return m_folderName;
 		}
 
 		template<typename FolderID>
-		[[nodiscard]] Folder* getFolder(FolderID folderID)
+		[[nodiscard]] Folder* getFolder(const FolderID& folderID)
 		{
-			if constexpr (std::is_same_v<FolderID, core::NID>)
+			if constexpr (std::is_same_v<FolderID, core::NID>) // Match folder on NID
 			{
 				if (m_nid == folderID)
 				{
 					return this;
 				}
 			}
-			else if constexpr (std::is_same_v<FolderID, std::string>)
+			else if constexpr (std::is_same_v<FolderID, std::string>) // Match folder on Folder Name
 			{
-				std::smatch match;
+				if (getName().find(folderID) != std::string::npos)
+				{
+					return this;
+				}
+			}
+			else if constexpr (std::is_same_v<FolderID, std::regex>) // Match folder on Folder Name Regex
+			{
 				const std::string& folderName = getName();
-				if (std::regex_search(folderName, match, std::regex(folderID)))
+				if (std::regex_search(folderName, std::regex(folderID)))
 				{
 					return this;
 				}
@@ -447,8 +550,9 @@ namespace reader::msg
 			m_contents(contents), 
 			m_assoc(assoc)
 		{
+			m_folderName = m_normal.getProperty<ltp::PTString>(types::PidTagType::DisplayName).data;
 			_setupSubFolders();
-			_setupMessages();
+			//_setupMessages();
 		}
 
 		void _setupSubFolders()
@@ -478,6 +582,7 @@ namespace reader::msg
 		}
 
 	private:
+		std::string m_folderName{};
 		core::NID m_nid;
 		core::Ref<const ndb::NDB> m_ndb;
 		ltp::PropertyContext m_normal;
@@ -567,7 +672,7 @@ namespace reader::msg
 			m_rootFolder(Folder::Init(m_store.as<EntryID>(types::PidTagType::IpmSubTreeEntryId).nid, ndb)) {}
 		
 		template<typename FolderID>
-		[[nodiscard]] Folder* getFolder(FolderID folderID)
+		[[nodiscard]] Folder* getFolder(const FolderID& folderID)
 		{
 			// The Root Folder can return a ptr to itself
 			return m_rootFolder.getFolder(folderID);
