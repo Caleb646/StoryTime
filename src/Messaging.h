@@ -29,8 +29,10 @@ namespace reader::msg
 		explicit Attachment(ltp::PropertyContext&& pc)
 			: m_pc(std::move(pc)) 
 		{
-			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachSize)), "AttachSize must be present on valid Attachment");
-			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachMethod)), "AttachMethod must be present on valid Attachment");
+			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachSize)), 
+				"AttachSize must be present on valid Attachment");
+			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachMethod)), 
+				"AttachMethod must be present on valid Attachment");
 			STORYT_INFO("Attachment Mime Type Header [{}]", getMimeType());
 		}
 		[[nodiscard]] size_t getSize()
@@ -62,12 +64,14 @@ namespace reader::msg
 			}
 			else if (data.propType == types::PropertyType::Object) // Content is a Sub Message Object with the nid being in PTObject
 			{
-				STORYT_ASSERT(false, "Attachments with AttachDataObject set are nested Message Objects and they are not implemented currently");
+				STORYT_ASSERT(false, 
+					"Attachments with AttachDataObject set are nested Message Objects and they are not implemented currently");
 				return {};
 			}
 			else
 			{
-				STORYT_ASSERT(false, "Attachments content PropType [{}] was not valid", static_cast<uint32_t>(data.propType));
+				STORYT_ASSERT(false, 
+					"Attachments content PropType [{}] was not valid", static_cast<uint32_t>(data.propType));
 				return {};
 			}
 		}

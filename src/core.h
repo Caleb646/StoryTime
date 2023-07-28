@@ -17,16 +17,16 @@
 
 namespace reader::core {
     /**
-        * @brief = Every block allocated in the PST file is identified using the BID structure.
-        *  This structure varies in size according the format of the file. In the case of ANSI files,
-        *  the structure is a 32-bit unsigned value, while in Unicode files it is a 64-bit unsigned long.
-        *  In addition, there are two types of BIDs:
-        *      1. BIDs used in the context of Pages (section 2.2.2.7)
-        *          use all of the bits of the structure (below) and are incremented by 1.
-        *      2. Block BIDs (section 2.2.2.8)
-        *          reserve the two least significant bits for flags (see below). As a result these increment
-        *          by 4 each time a new one is assigned.
-        * @param bidIndex (Unicode: 62 or 64 bits): A monotonically increasing value
+    * @brief = Every block allocated in the PST file is identified using the BID structure.
+    *  This structure varies in size according the format of the file. In the case of ANSI files,
+    *  the structure is a 32-bit unsigned value, while in Unicode files it is a 64-bit unsigned long.
+    *  In addition, there are two types of BIDs:
+    *      1. BIDs used in the context of Pages (section 2.2.2.7)
+    *          use all of the bits of the structure (below) and are incremented by 1.
+    *      2. Block BIDs (section 2.2.2.8)
+    *          reserve the two least significant bits for flags (see below). As a result these increment
+    *          by 4 each time a new one is assigned.
+    * @param bidIndex (Unicode: 62 or 64 bits): A monotonically increasing value
     *       that uniquely identifies the BID within the PST file. bidIndex values are assigned
     *       based on the bidNextB value in the HEADER structure (see section 2.2.2.6). The bidIndex
     *       increments by one each time a new BID is assigned.
@@ -34,13 +34,6 @@ namespace reader::core {
     */
     class BID
     {
-    public:
-        /**
-            * bidIndex (Unicode: 62 bits; ANSI: 30 bits): A monotonically increasing value
-            *  that uniquely identifies the BID within the PST file. bidIndex values are assigned
-            *  based on the bidNextB value in the HEADER structure (see section 2.2.2.6). The bidIndex
-            *  increments by one each time a new BID is assigned.
-        */
     public:
         BID() = default;
         explicit BID(uint64_t _bid) : m_bid(_bid)
@@ -55,20 +48,19 @@ namespace reader::core {
 
         [[nodiscard]] bool isInternal() const
         {
-            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "BID not setup");
             return (m_bid & 0x02U) > 0U;
         }
 
         [[nodiscard]] uint64_t getBidIndex() const
 		{
-            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "BID not setup");
 			return (m_bid >> 2U) << 2U;
-            //return m_bid;
 		}
 
         [[nodiscard]] uint64_t getBidRaw() const
         {
-            STORYT_ASSERT((m_isSetup == true), "[ERROR] BID not setup");
+            STORYT_ASSERT((m_isSetup == true), "BID not setup");
             return m_bid;
         }
 
@@ -116,6 +108,12 @@ namespace reader::core {
             m_isSetup = true;
         }
     private:
+        /**
+        * bidIndex (Unicode: 62 bits): A monotonically increasing value
+        *  that uniquely identifies the BID within the PST file. bidIndex values are assigned
+        *  based on the bidNextB value in the HEADER structure. The bidIndex
+        *  increments by one each time a new BID is assigned.
+        */
         uint64_t m_bid{};
         bool m_isSetup{ false };
     };
@@ -225,7 +223,7 @@ namespace reader::core {
 
         explicit BREF(const std::vector<types::byte_t>& bytes)
         {
-            STORYT_ASSERT((bytes.size() == 16), "[ERROR] BREF must be 16 bytes not %i", bytes.size());
+            STORYT_ASSERT((bytes.size() == 16), "BREF must be 16 bytes not [{}]", bytes.size());
             utils::ByteView view(bytes);
             bid = view.entry<BID>(8);
             ib = view.read<uint64_t>(8);
@@ -270,7 +268,7 @@ namespace reader::core {
 
         static Root Init(const std::vector<types::byte_t>& bytes)
         {
-            STORYT_ASSERT((bytes.size() == 72), "[ERROR]");
+            STORYT_ASSERT((bytes.size() == 72), "bytes.size() [{}] != Root Size [72]", bytes.size());
             utils::ByteView view(bytes);
             /*
             * dwReserved (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it.
@@ -282,7 +280,7 @@ namespace reader::core {
             * ibFileEof (Unicode: 8 bytes; ANSI 4 bytes): The size of the PST file, in bytes.
             */
             std::uint64_t ibFileEof = view.read<uint64_t>(8); 
-            LOG("[INFO] [file size in bytes] %u", ibFileEof);
+            STORYT_INFO("file size in bytes [{}]", ibFileEof);
 
             /*
             * ibAMapLast (Unicode: 8 bytes; ANSI 4 bytes): An IB structure (section 2.2.2.3)
@@ -317,7 +315,7 @@ namespace reader::core {
             const BREF BREFNBT = view.entry<BREF>(16); // utils::slice(bytes, 36, 52, 16);
             const BREF BREFBBT = view.entry<BREF>(16);  //utils::slice(bytes, 52, 68, 16);
             const uint8_t fAMapValid = view.read<uint8_t>(1); // utils::slice(bytes, 68, 69, 1, utils::toT_l<uint8_t>);
-            STORYT_ASSERT((fAMapValid == 0x02), "[ERROR] Invalid AMaps");
+            STORYT_ASSERT((fAMapValid == 0x02), "Invalid AMaps");
             /*
             * bReserved (1 types::byte_t): Implementations SHOULD ignore this value and SHOULD NOT modify it.
             *  Creators of a new PST file MUST initialize this value to zero.

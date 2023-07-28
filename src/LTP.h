@@ -1458,7 +1458,7 @@ namespace reader {
 					{
 						_loadRowMatrixFromSubNodeTree();
 					}
-					LOGIF((m_rowIDs.size() < m_rowsPerBlock),
+					STORYT_WARNIF((m_rowIDs.size() < m_rowsPerBlock),
 						"The number of row IDs [{}] is less than the number of rows per block [{}]", 
 						m_rowIDs.size(), m_rowsPerBlock);
 				}

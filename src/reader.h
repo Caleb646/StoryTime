@@ -50,14 +50,14 @@ namespace reader
         void _open()
         {
             m_file.open(m_path, std::ios::binary);
-            STORYT_ASSERT(m_file.is_open(), "[ERROR] Failed to open file [{}]", m_path.c_str());
+            STORYT_ASSERT(m_file.is_open(), "Failed to open file [{}]", m_path.c_str());
         }
 
         core::Header _readHeader(std::ifstream& file)
         {
-            STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            STORYT_ASSERT((file.fail() == false), "Failed to read file [{}]", m_path.c_str());
             file.seekg(0);
-            STORYT_ASSERT((file.fail() == false), "[ERROR] Failed to read [file] %s", m_path.c_str());
+            STORYT_ASSERT((file.fail() == false), "Failed to open file [{}]", m_path.c_str());
             const std::vector<types::byte_t> bytes = utils::readBytes(file, 564);
 
             /**
@@ -87,7 +87,7 @@ namespace reader
                  The data MAY have been protected by WIP.  
             */
             std::uint16_t wVer = utils::slice(bytes, 10, 12, 2, utils::toT_l<std::uint16_t>);
-            STORYT_ASSERT((wVer >= 23), "[ERROR] [wVer] %i was not greater than 23", wVer);
+            STORYT_ASSERT((wVer >= 23), "wVer [{}] was not greater than 23", wVer);
 
             /*
             * wVerClient (2 bytes): Client file format version. The version that corresponds to 
@@ -95,17 +95,17 @@ namespace reader
             * based on this document SHOULD initialize this value to 19. 
             */ 
             std::uint16_t wVerClient = utils::slice(bytes, 12, 14, 2, utils::toT_l<std::uint16_t>);
-            STORYT_ASSERT((wVerClient == 19), "[ERROR] [wVerClient] != 19 but %i", wVerClient);
+            STORYT_ASSERT((wVerClient == 19), "wVerClient != 19 but [{}]", wVerClient);
 
             /* bPlatformCreate (1 types::byte_t): This value MUST be set to 0x01. 
             */ 
             std::uint8_t bPlatformCreate = utils::slice(bytes, 14, 15, 1, utils::toT_l<std::uint8_t>);
-            STORYT_ASSERT((bPlatformCreate == 0x01), "[ERROR] [bPlatformCreate] != 0x01 but %i", bPlatformCreate);
+            STORYT_ASSERT((bPlatformCreate == 0x01), "bPlatformCreate != 0x01 but [{}]", bPlatformCreate);
 
             /* bPlatformAccess (1 types::byte_t): This value MUST be set to 0x01. 
             */
             std::uint8_t bPlatformAccess = utils::slice(bytes, 15, 16, 1, utils::toT_l<std::uint8_t>);
-            STORYT_ASSERT((bPlatformAccess == 0x01), "[ERROR] [bPlatformCreate] != 0x01 but %i", bPlatformAccess);
+            STORYT_ASSERT((bPlatformAccess == 0x01), "bPlatformCreate != 0x01 but [{}]", bPlatformAccess);
 
             /* dwReserved1 (4 bytes): Implementations SHOULD ignore this value and SHOULD NOT modify it. 
               Creators of a new PST file MUST initialize this value to zero.
@@ -170,22 +170,22 @@ namespace reader
                if ((types::NIDType)i == types::NIDType::NORMAL_FOLDER)
                {
                    STORYT_ASSERT((nidIndex >= 1024),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
+                       "nidType [{}] nidIndex [{}] was not 1024", nidTypeString.c_str(), nidIndex);
                }
                else if ((types::NIDType)i == types::NIDType::SEARCH_FOLDER)
                {
                    STORYT_ASSERT((nidIndex >= 16384),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
+                       "nidType [{}] nidIndex [{}] was not 1024", nidTypeString.c_str(), nidIndex);
                }
                else if ((types::NIDType)i == types::NIDType::NORMAL_MESSAGE)
                {
                    STORYT_ASSERT((nidIndex >= 65536),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 65536", nidTypeString.c_str(), nidIndex);
+                       "nidType [{}] nidIndex [{}] was not 65536", nidTypeString.c_str(), nidIndex);
                }
                else
                {
                    STORYT_ASSERT((nidIndex >= 1024),
-                       "[ERROR] nidType [%s] nidIndex [%i] was not 1024", nidTypeString.c_str(), nidIndex);
+                       "nidType [{}] nidIndex [{}] was not 1024", nidTypeString.c_str(), nidIndex);
                }
            }
 
@@ -204,7 +204,7 @@ namespace reader
            * dwAlign (4 bytes): Unused alignment bytes; MUST be set to zero. Unicode PST file format only.
            */
            std::uint32_t dwAlign = utils::slice(bytes, 252, 256, 4, utils::toT_l<std::uint32_t>);
-           STORYT_ASSERT((dwAlign == 0), "[ERROR] [dwAlign] %i was not set to zero.", dwAlign);
+           STORYT_ASSERT((dwAlign == 0), "dwAlign [{}] was not set to zero.", dwAlign);
             
            /*
            * rgbFM (128 bytes): Deprecated FMap. This is no longer used and MUST be filled with 0xFF. 
@@ -233,9 +233,9 @@ namespace reader
            * 0x10 NDB_CRYPT_EDPCRYPTED Encrypted with Windows Information Protection. 
            */
            const uint8_t bCryptMethod = utils::slice(bytes, 513, 514, 1, utils::toT_l<uint8_t>);
-           STORYT_ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "[ERROR] Invalid Encryption");
+           STORYT_ASSERT( (utils::isIn(bCryptMethod, { 0, 1, 2, 0x10 })) , "Invalid Encryption");
            STORYT_VERIFY((bCryptMethod == 0x01)); // Only support Permute currently
-           LOG("[bCryptMethod] %X", bCryptMethod);
+           STORYT_INFO("bCryptMethod [{}]", bCryptMethod);
             
            /*
            * rgbReserved (2 bytes): Reserved; MUST be set to zero.
