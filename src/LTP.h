@@ -351,8 +351,8 @@ namespace reader {
 			uint8_t iBit{};
 
 			//uint32_t propId() const noexcept { return tag & 0xFFFF0000; }
-			[[nodiscard]] uint32_t propId() const noexcept { return (tag & 0xFFFF0000U) >> 16U; }
-			[[nodiscard]] uint32_t propType() const noexcept { return tag & 0xFFFFU; }
+			[[nodiscard]] uint32_t getPID() const noexcept { return (tag & 0xFFFF0000U) >> 16U; }
+			[[nodiscard]] uint32_t getPType() const noexcept { return tag & 0xFFFFU; }
 		};
 
 		/**
@@ -422,74 +422,6 @@ namespace reader {
 			/// (Unicode: 4 bytes): The 0-based index to the corresponding row 
 			/// in the Row Matrix. Note that for ANSI PSTs, the maximum number of rows is 2^16.
 			uint32_t dwRowIndex{};
-		};
-
-		/**
-		 * @brief The following is the organization of a single row of data in the Row Matrix. 
-		 * Rows of data are tightlypacked in the Row Matrix, and the size of each data 
-		 * row is TCINFO.rgib[TCI_bm] bytes. The following constraints exist for the columns within the structure. 
-		 * Columns MUST be sorted:
-			1. PidTagLtpRowId MUST be assigned iBit == 0
-			2. PidTagLtpRowId MUST be assigned ibData == 0 
-			3. PidTagLtpRowVer MUST be assigned iBit == 1 
-			4. PidTagLtpRowVer MUST be assigned ibData == 4
-			5. For any other columns, iBit can change/be any valid value (other than 0 and 1)
-			6. For any other columns, ibData can be any valid value (other than 0 and 4) 
-		*/
-		struct RowData
-		{
-			TCInfo tcInfo{};
-			/// (4 bytes): The 32-bit value that corresponds to the dwRowID 
-			/// value in this row's corresponding TCROWID record. 
-			/// Note that this value corresponds to the PidTagLtpRowId property.
-			uint32_t dwRowID{};
-
-			/// (variable): Cell Existence Block. This array of bits comprises the CEB, 
-			/// in which each bit corresponds to a particular Column in the current row. 
-			/// The mapping between CEB bits and actual Columns is based on the iBit 
-			/// member of each TCOLDESC (section 2.3.4.2), where an iBit value of zero 
-			/// maps to the Most Significant Bit (MSB) of the 0th byte of the CEB array (rgCEB[0]). 
-			/// Subsequent iBit values map to the next less-significant bit until 
-			/// the Least Significant Bit (LSB) is reached, where the subsequent iBit can 
-			/// be found in the MSB of the next byte in the CEB array and the process repeats itself. 
-			/// Programmatically, the Cell Existence Bit that corresponds to iBit can be extracted 
-			/// as follows:  BOOL fCEB = !!(rgCEB[iBit / 8] & (1 << (7 - (iBit % 8)))); 
-			/// Space is reserved for a column in the Row Matrix, regardless of the corresponding CEB bit value 
-			/// for that column. Specifically, an fCEB bit value of TRUE indicates that the corresponding 
-			/// column value in the Row matrix is valid and SHOULD be returned if requested. However, an 
-			/// fCEB bit value of false indicates that the corresponding column value in the Row matrix 
-			/// is "not set" or "invalid". In this case, the property MUST be "not found" if requested. 
-			/// The size of rgCEB is CEIL(TCINFO.cCols / 8) bytes. Extra lower-order bits SHOULD be ignored. 
-			/// Creators of a new PST MUST set the extra lower-order bits to zero.
-			std::vector<types::byte_t> rgbCEB{};
-			/// Everything from the start of Row Data to the start of rgbCEB
-			std::vector<types::byte_t> data{};
-
-			explicit RowData(const std::vector<types::byte_t>& rowBytes, const TCInfo& header)
-			{
-				const size_t offset4b = header.rgib.at(TCInfo::TCI_4b);
-				const size_t offset2b = header.rgib.at(TCInfo::TCI_2b);
-				const size_t offset1b = header.rgib.at(TCInfo::TCI_1b);
-				const size_t totalRowSize = header.rgib.at(TCInfo::TCI_bm);
-
-				STORYT_ASSERT((offset4b <= offset2b), "offset4b is not <= offset2b");
-				STORYT_ASSERT((offset2b <= offset1b), "offset2b is not <= offset1b");
-				STORYT_ASSERT((offset1b < totalRowSize), "offset1b is not < totalRowSize");
-
-				tcInfo = header;
-				utils::ByteView view(rowBytes);
-				dwRowID = view.read<uint32_t>(4);
-				// Read everything from the start of Row Data to the start of rgbCEB
-				data = view.setStart(0).read(offset1b);
-				rgbCEB = view.read(totalRowSize - offset1b);
-
-				STORYT_ASSERT((rgbCEB.size() == static_cast<size_t>(std::ceil(static_cast<double>(header.cCols) / 8.0))), "RowData Constructor");
-			}
-
-			[[nodiscard]] bool exists(uint8_t iBit) const
-			{
-				return (rgbCEB[iBit / 8U] & (1U << (7U - (iBit % 8U))));
-			}
 		};
 
 
@@ -1211,6 +1143,209 @@ namespace reader {
 			std::vector<types::byte_t> data;
 			types::PropertyType propType;
 			uint32_t propID;
+			bool isLoaded{ false };
+		};
+
+		/**
+		 * @brief The following is the organization of a single row of data in the Row Matrix.
+		 * Rows of data are tightlypacked in the Row Matrix, and the size of each data
+		 * row is TCINFO.rgib[TCI_bm] bytes. The following constraints exist for the columns within the structure.
+		 * Columns MUST be sorted:
+			1. PidTagLtpRowId MUST be assigned iBit == 0
+			2. PidTagLtpRowId MUST be assigned ibData == 0
+			3. PidTagLtpRowVer MUST be assigned iBit == 1
+			4. PidTagLtpRowVer MUST be assigned ibData == 4
+			5. For any other columns, iBit can change/be any valid value (other than 0 and 1)
+			6. For any other columns, ibData can be any valid value (other than 0 and 4)
+		*/
+		class SingleRow
+		{
+		public:
+
+			explicit SingleRow(const std::vector<types::byte_t>& rowBytes, const TCInfo& header)
+				: m_tcInfo(header)
+			{
+				const size_t offset4b = header.rgib.at(TCInfo::TCI_4b);
+				const size_t offset2b = header.rgib.at(TCInfo::TCI_2b);
+				const size_t offset1b = header.rgib.at(TCInfo::TCI_1b);
+				const size_t totalRowSize = header.rgib.at(TCInfo::TCI_bm);
+
+				STORYT_ASSERT((offset4b <= offset2b), "offset4b is not <= offset2b");
+				STORYT_ASSERT((offset2b <= offset1b), "offset2b is not <= offset1b");
+				STORYT_ASSERT((offset1b < totalRowSize), "offset1b is not < totalRowSize");
+
+				utils::ByteView view(rowBytes);
+				m_dwRowID = view.read<uint32_t>(4);
+				// Read everything from the start of Row Data to the start of rgbCEB
+				m_data = view.setStart(0).read(offset1b);
+				m_rgbCEB = view.read(totalRowSize - offset1b);
+				_setupRowEntries();
+				STORYT_ASSERT((m_rgbCEB.size() == static_cast<size_t>(std::ceil(static_cast<double>(header.cCols) / 8.0))), "RowData Constructor");
+			}
+			[[nodiscard]] size_t getRowID() const
+			{
+				return m_dwRowID;
+			}
+			[[nodiscard]] size_t nColumns() const
+			{
+				return m_tcInfo.cCols;
+			}
+			[[nodiscard]] bool isColumnPresent(uint8_t iBit) const
+			{
+				return (m_rgbCEB[iBit / 8U] & (1U << (7U - (iBit % 8U))));
+			}
+			[[nodiscard]] bool hasRowEntry(uint32_t pid) const
+			{
+				return  m_rowEntries.contains(pid);
+			}
+			[[nodiscard]] bool hasRowEntry(types::PidTagType pid) const
+			{
+				return hasRowEntry(static_cast<uint32_t>(pid));
+			}
+			[[nodiscard]] RowEntry* TryToGetRowEntry(uint32_t pid)
+			{
+				if (m_rowEntries.contains(pid))
+				{
+					RowEntry* entry = &m_rowEntries.at(pid);
+					if (entry->isLoaded)
+					{
+						return entry;
+					}
+					else
+					{
+						STORYT_ASSERT(false, "Trying to get a Row Entry that is not loaded PID [{}]", pid);
+					}
+				}
+				STORYT_ASSERT(false, "Failed to find RowEntry with PID [{}]", pid);
+				return nullptr;
+			}
+			[[nodiscard]] RowEntry* TryToGetRowEntry(types::PidTagType& pid)
+			{
+				return TryToGetRowEntry(static_cast<uint32_t>(pid));
+			}
+
+			[[nodiscard]] RowEntry* loadRowEntry(const HN& hn, std::optional<ndb::SubNodeBTree>& subtree, const TColDesc& colInfo)
+			{
+				if (m_rowEntries.contains(colInfo.getPID()))
+				{
+					RowEntry* entry = &m_rowEntries.at(colInfo.getPID());
+					if (entry->isLoaded) // If the entry has already been loaded then just return it.
+					{
+						return entry;
+					}
+					else if (isColumnPresent(colInfo.iBit))
+					{
+						utils::ByteView view(m_data);
+						entry->propID = colInfo.getPID();
+						entry->propType = utils::PropertyType(colInfo.getPType());
+						const utils::PTInfo ptInfo = utils::PropertyTypeInfo(colInfo.getPType());
+						// Read data where the column starts (ibData) to where it ends (cbData)
+						const std::vector<types::byte_t> data = view.setStart(colInfo.ibData).read(colInfo.cbData);
+						if (DataIsStoredInline(ptInfo)) // Data is stored inline
+						{
+							entry->data = data;
+						}
+						else if (DataIsStoredInHN(data)) // Data is stored in HN and Indexed using HID
+						{
+							entry->data = hn.getAllocation(HID(data));
+						}
+						else if (DataIsStoredInSubNodeTree(ptInfo, data) && subtree.has_value())
+						{
+							const core::NID nid = core::NID(data);
+							ndb::DataTree* datatree = subtree->getDataTree(nid);
+							if (datatree != nullptr)
+							{
+								entry->data = datatree->combineDataBlocks();
+							}
+							else
+							{
+								STORYT_ASSERT(false,
+									"Failed to find data tree in subnode tree using NID [{}] for SingleRow", nid.getNIDRaw());
+							}
+						}
+						entry->isLoaded = true;
+						return entry;
+					}
+				}
+				STORYT_ASSERT(false, "Failed to find RowEntry with Column PID [{}]", colInfo.getPID());
+				return nullptr;
+			}
+
+			[[nodiscard]] SingleRow& loadEntireRow(const HN& hn, std::optional<ndb::SubNodeBTree>& subtree)
+			{
+				for (const auto& col : m_tcInfo.rgTCOLDESC)
+				{
+					loadRowEntry(hn, subtree, col);
+				}
+				return *this;
+			}
+			[[nodiscard]] bool DataIsStoredInline(const utils::PTInfo& ptInfo) const
+			{
+				return ptInfo.isFixed && ptInfo.singleEntrySize <= 8ULL;
+			}
+
+			[[nodiscard]] bool DataIsStoredInHN(const std::vector<types::byte_t>& data) const
+			{
+				return (data[0] & 0x1FU) == 0U;
+			}
+
+			[[nodiscard]] bool DataIsStoredInSubNodeTree(const utils::PTInfo& ptInfo, const std::vector<types::byte_t>& data) const
+			{
+				return !DataIsStoredInline(ptInfo) && !DataIsStoredInHN(data);
+			}
+
+		private:
+			void _setupRowEntries()
+			{
+				// There will be a maximum number of RowEntries for a SingleRow as there
+				// are columns in the Row Matrix. So resize the m_rowEntries vector to match
+				// and fill it with empty RowEntries
+				m_rowEntries.reserve(nColumns());
+				for (const auto& col : m_tcInfo.rgTCOLDESC)
+				{
+					if (!m_rowEntries.contains(col.getPID()))
+					{
+						m_rowEntries[col.getPID()] = RowEntry{};
+					}
+					else
+					{
+						STORYT_ASSERT(false, "Found duplicate PID when constructing RowEntries for SingleRow");
+					}
+				}
+			}
+		private:
+			TCInfo m_tcInfo{};
+			/// (4 bytes): The 32-bit value that corresponds to the dwRowID 
+			/// value in this row's corresponding TCROWID record. 
+			/// Note that this value corresponds to the PidTagLtpRowId property.
+			uint32_t m_dwRowID{};
+			/// (variable): Cell Existence Block. This array of bits comprises the CEB, 
+			/// in which each bit corresponds to a particular Column in the current row. 
+			/// The mapping between CEB bits and actual Columns is based on the iBit 
+			/// member of each TCOLDESC (section 2.3.4.2), where an iBit value of zero 
+			/// maps to the Most Significant Bit (MSB) of the 0th byte of the CEB array (rgCEB[0]). 
+			/// Subsequent iBit values map to the next less-significant bit until 
+			/// the Least Significant Bit (LSB) is reached, where the subsequent iBit can 
+			/// be found in the MSB of the next byte in the CEB array and the process repeats itself. 
+			/// Programmatically, the Cell Existence Bit that corresponds to iBit can be extracted 
+			/// as follows:  BOOL fCEB = !!(rgCEB[iBit / 8] & (1 << (7 - (iBit % 8)))); 
+			/// Space is reserved for a column in the Row Matrix, regardless of the corresponding CEB bit value 
+			/// for that column. Specifically, an fCEB bit value of TRUE indicates that the corresponding 
+			/// column value in the Row matrix is valid and SHOULD be returned if requested. However, an 
+			/// fCEB bit value of false indicates that the corresponding column value in the Row matrix 
+			/// is "not set" or "invalid". In this case, the property MUST be "not found" if requested. 
+			/// The size of rgCEB is CEIL(TCINFO.cCols / 8) bytes. Extra lower-order bits SHOULD be ignored. 
+			/// Creators of a new PST MUST set the extra lower-order bits to zero.
+			std::vector<types::byte_t> m_rgbCEB{};
+			/// Everything from the start of Row Data to the start of rgbCEB
+			/// Can contain the actual data is the data is less than 8 bytes
+			/// otherwise the data is in the single row.
+			std::vector<types::byte_t> m_data{};
+			/// RowEntries will either be loaded or need to be loaded.
+			/// If loaded they will contain all the byte information for that particular
+			/// row entry. If not loaded they will need be loaded using an HN and SubNodeTree.
+			/// The key is the PIDTag for the column.
+			std::unordered_map<uint32_t, RowEntry> m_rowEntries{};
 		};
 
 		class RowBlock
@@ -1221,17 +1356,16 @@ namespace reader {
 			{
 				const size_t singleRowSize = header.rgib.at(TCInfo::TCI_bm);
 				utils::ByteView view(blockBytes);
-				m_rows = view.entries<RowData>(blockBytes.size() / singleRowSize, singleRowSize, header);
+				m_rows = view.entries<SingleRow>(blockBytes.size() / singleRowSize, singleRowSize, header);
 				STORYT_ASSERT((m_rows.size() == rowsPerBlock), "m_rows.size() != rowsPerBlock");
 			}
-
-			[[nodiscard]] const RowData& at(size_t rowIdx) const
+			[[nodiscard]] SingleRow& getSingleRow(size_t rowIdx)
 			{
 				return m_rows.at(rowIdx);
 			}
 
 		private:
-			std::vector<RowData> m_rows{};
+			std::vector<SingleRow> m_rows{};
 		};
 
 		class TableContext
@@ -1270,7 +1404,31 @@ namespace reader {
 			static TableContext Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 			{			
 				const auto nbt = ndb->get(nid);
+				STORYT_ASSERT(nbt.has_value(), "Failed to Init TableContext with NID of [{}]", nid.getNIDRaw());
 				return TableContext(HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt->bidSub));
+			}
+			void loadRowMatrix()
+			{
+				if (!m_bth.empty() && !m_rowMatrixIsLoaded)
+				{
+					if (m_header.hnidRows.isHID()) // Row Matrix is in the HN
+					{
+						_loadRowMatrixFromHN();
+					}
+
+					else // Row Matrix must be in a subnode id'ed by a NID
+					{
+						_loadRowMatrixFromSubNodeTree();
+					}
+					STORYT_WARNIF((m_rowIDs.size() < m_rowsPerBlock),
+						"The number of row IDs [{}] is less than the number of rows per block [{}]",
+						m_rowIDs.size(), m_rowsPerBlock);
+				}
+				m_rowMatrixIsLoaded = true;
+			}
+			[[nodiscard]] size_t getSizeOfSingleRow() const
+			{
+				return m_header.rgib.at(TCInfo::TCI_bm);
 			}
 
 			[[nodiscard]] size_t nRows() const
@@ -1283,66 +1441,27 @@ namespace reader {
 				return m_rowIDs;
 			}
 
-			[[nodiscard]] std::vector<RowEntry> getRow(TCRowID rowID)
+			[[nodiscard]] const std::vector<TColDesc>& getColumns() const
 			{
-				STORYT_ASSERT(m_rowMatrixIsLoaded, "Trying to get a row from a TableContext that has not loaded its Row Matrix");
-				const RowData& rowData = at(rowID);
-				STORYT_ASSERT((rowData.dwRowID == rowID.dwRowID), "rowData.dwRowID != rowID.dwRowID");
-				utils::ByteView view(rowData.data);
-				std::vector<RowEntry> entries;
-				for (const auto& col : m_header.rgTCOLDESC)
-				{
-					if (rowData.exists(col.iBit))
-					{
-						RowEntry entry{};
-						entry.propID = col.propId();
-						entry.propType = utils::PropertyType(col.propType());
-						const utils::PTInfo ptInfo = utils::PropertyTypeInfo(col.propType());
-						const std::vector<types::byte_t> data = view.setStart(col.ibData).read(col.cbData);
-						if (ptInfo.isFixed && ptInfo.singleEntrySize <= 8ULL) // Data is stored inline
-						{
-							entry.data = data;
-						}
-						else if ((data[0] & 0x1FU) == 0U) // Data is stored in HN and Indexed using HID
-						{
-							entry.data = m_hn.getAllocation(HID(data));
-						}
-						else // Must be stored in a SubNodeBTree and Indexed using an NID
-						{
-							STORYT_ASSERT((m_subtree.has_value()), "m_subtree was not initialized");
-							ndb::DataTree* datatree = m_subtree->getDataTree(core::NID(data));
-							STORYT_ASSERT((datatree != nullptr), 
-								"Failed to find data tree in subnode tree using NID [{}]", core::NID(data).getNIDRaw());
-							entry.data = datatree->combineDataBlocks();
-						}
-						entries.push_back(entry);
-					}
-				}
-				return entries;
+				return m_header.rgTCOLDESC;
 			}
 
-			[[nodiscard]] bool hasCol(types::PidTagType propID, types::PropertyType propType) const
+			[[nodiscard]] bool hasColumn(types::PidTagType pid, types::PropertyType ptype) const
 			{
-				const auto propID_ = static_cast<uint32_t>(propID);
-				const auto propType_ = static_cast<uint32_t>(propType);
-				for(const auto& col : m_header.rgTCOLDESC)
-				{
-					const uint32_t colPropId = col.propId();
-					const uint32_t colPropType = col.propType();
-					if (colPropId == propID_ && colPropType == propType_)
-					{
-						return true;
-					}
-				}
-				return false;
+				const auto upid = static_cast<uint32_t>(pid);
+				const auto uptype = static_cast<uint32_t>(ptype);
+				auto match = [upid, uptype](const TColDesc& desc) {
+					return desc.getPID() == upid && desc.getPType() == uptype;
+				};
+				return std::ranges::any_of(m_header.rgTCOLDESC.cbegin(), m_header.rgTCOLDESC.cend(), match);
 			}
 
-			[[nodiscard]] TColDesc getCol(types::PidTagType propID) const
+			[[nodiscard]] TColDesc getColumn(types::PidTagType propID) const
 			{
 				const auto propID_ = static_cast<uint32_t>(propID);
 				for (const auto& col : m_header.rgTCOLDESC)
 				{
-					const uint32_t colPropId = col.propId();
+					const uint32_t colPropId = col.getPID();
 					if (colPropId == propID_)
 					{
 						return col;
@@ -1351,12 +1470,23 @@ namespace reader {
 				STORYT_ASSERT(false, "Failed to find column");
 				return TColDesc{};
 			}
+			[[nodiscard]] RowEntry* getSingleRowAndLoadColumn(TCRowID rowID, types::PidTagType pid)
+			{
+				loadRowMatrix();
+				return getSingleRowRaw(rowID).loadRowEntry(m_hn, m_subtree, getColumn(pid));
+			}
 
-			[[nodiscard]] const RowData& at(TCRowID rowID) const
+			[[nodiscard]] SingleRow& getSingleRowAndLoadEntireRow(TCRowID rowID)
+			{
+				loadRowMatrix(); 
+				return getSingleRowRaw(rowID).loadEntireRow(m_hn, m_subtree);
+			}
+
+			[[nodiscard]] SingleRow& getSingleRowRaw(TCRowID rowID) // A Raw Single Row will be returned
 			{
 				const size_t blockIdx = rowID.dwRowIndex / m_rowsPerBlock;
 				const size_t rowIdx = rowID.dwRowIndex % m_rowsPerBlock;
-				return m_rowBlocks.at(blockIdx).at(rowIdx);
+				return m_rowBlocks.at(blockIdx).getSingleRow(rowIdx);
 			}
 
 			static TCInfo readTCInfo(const std::vector<types::byte_t>& bytes)
@@ -1406,26 +1536,6 @@ namespace reader {
 				return cols;
 			}
 
-			void load()
-			{
-				if (!m_bth.empty() && !m_rowMatrixIsLoaded)
-				{
-					if (m_header.hnidRows.isHID()) // Row Matrix is in the HN
-					{
-						_loadRowMatrixFromHN();
-					}
-
-					else // Row Matrix must be in a subnode id'ed by a NID
-					{
-						_loadRowMatrixFromSubNodeTree();
-					}
-					STORYT_WARNIF((m_rowIDs.size() < m_rowsPerBlock),
-						"The number of row IDs [{}] is less than the number of rows per block [{}]", 
-						m_rowIDs.size(), m_rowsPerBlock);
-				}
-				m_rowMatrixIsLoaded = true;
-			}
-
 		private:
 			explicit TableContext(
 				HN&& hn, 
@@ -1437,14 +1547,17 @@ namespace reader {
 				m_bth(m_hn, m_header.hidRowIndex), 
 				m_subtree(std::move(subtree))
 			{
-				static_assert(std::is_move_constructible_v<TableContext>, "TableContext must be move constructible");
-				//static_assert(std::is_move_assignable_v<TableContext>, "TableContext must be move assignable");
-				static_assert(std::is_copy_constructible_v<TableContext>, "TableContext must be copy constructible");
-				//static_assert(std::is_copy_assignable_v<TableContext>, "TableContext must be copy assignable");
+				VerifyTableContextIsValid_();
+				_loadRowIndexFromBTH();
+			}
+			void VerifyTableContextIsValid_() const
+			{
 				STORYT_ASSERT((m_hn.getBType() == types::BType::TC), "m_hn.getBType() != types::BType::TC");
 				STORYT_ASSERT((m_bth.getKeySize() == 4), "m_bth.getKeySize() != 4");
 				STORYT_ASSERT((m_bth.getDataSize() == 4), "m_bth.getDataSize() != 4");
-
+			}
+			void _loadRowIndexFromBTH()
+			{
 				if (!m_bth.empty())
 				{
 					for (const auto& record : m_bth.records())
@@ -1452,12 +1565,16 @@ namespace reader {
 						m_rowIDs.push_back(record.as<TCRowID>());
 					}
 				}
+				else
+				{
+					STORYT_WARN("Trying to load RowIndex but the BTH is empty");
+				}
 			}
 
 			void _loadRowMatrixFromHN()
 			{
 				auto rowBlockBytes = m_hn.getAllocation(m_header.hnidRows.as<HID>());
-				m_rowsPerBlock = rowBlockBytes.size() / m_header.rgib.at(TCInfo::TCI_bm);
+				m_rowsPerBlock = rowBlockBytes.size() / getSizeOfSingleRow();
 				/// This check only works for HID allocated Row Matrices
 				STORYT_ASSERT((m_rowsPerBlock == m_bth.nrecords()), "Invalid number of rows per block");
 				m_rowBlocks.emplace_back(rowBlockBytes, m_header, m_rowsPerBlock);
@@ -1466,29 +1583,36 @@ namespace reader {
 			void _loadRowMatrixFromSubNodeTree() 
 			{
 				STORYT_ASSERT((m_subtree.has_value()), "!m_subtree.has_value()");
-				ndb::DataTree* datatree = m_subtree->getDataTree(m_header.hnidRows.as<core::NID>());
-				m_rowsPerBlock = datatree->sizeOfDataBlockData(0) / m_header.rgib.at(TCInfo::TCI_bm);
-				for (size_t i = 0; i < datatree->nDataBlocks(); i++)
+				if (m_subtree.has_value())
 				{
-					if (i < datatree->nDataBlocks() - 1)
+					ndb::DataTree* datatree = m_subtree->getDataTree(m_header.hnidRows.as<core::NID>());
+					m_rowsPerBlock = datatree->sizeOfDataBlockData(0) / getSizeOfSingleRow();
+					for (size_t i = 0; i < datatree->nDataBlocks(); i++)
 					{
-						/// Each block except the last one MUST have a size of 8192 bytes.
-						/// TODO its possible this check will fail because of variable padding
-						STORYT_ASSERT((datatree->sizeOfDataBlockData(i) + 16 == 8192), "datatree->sizeOfDataBlockData(i) + 16 != 8192");
-					}
+						if (i < datatree->nDataBlocks() - 1)
+						{
+							/// Each block except the last one MUST have a size of 8192 bytes.
+							/// TODO its possible this check will fail because of variable padding
+							STORYT_ASSERT((datatree->sizeOfDataBlockData(i) + 16 == 8192), "datatree->sizeOfDataBlockData(i) + 16 != 8192");
+						}
 
-					/// last block will potentially have less rows because its allowed
-					/// to have fewer bytes
-					if (i == datatree->nDataBlocks() - 1)
-					{
-						m_rowBlocks.emplace_back(
-							datatree->at(i).data,
-							m_header,
-							datatree->sizeOfDataBlockData(i) / m_header.rgib.at(TCInfo::TCI_bm)
-						);
-						continue;
+						/// last block will potentially have less rows because its allowed
+						/// to have fewer bytes
+						if (i == datatree->nDataBlocks() - 1)
+						{
+							m_rowBlocks.emplace_back(
+								datatree->at(i).data,
+								m_header,
+								datatree->sizeOfDataBlockData(i) / m_header.rgib.at(TCInfo::TCI_bm)
+							);
+							continue;
+						}
+						m_rowBlocks.emplace_back(datatree->at(i).data, m_header, m_rowsPerBlock);
 					}
-					m_rowBlocks.emplace_back(datatree->at(i).data, m_header, m_rowsPerBlock);
+				}
+				else
+				{
+					STORYT_ASSERT(false, "Failed to Setup RowMatrix for TableContext because SubTree was not initialized");
 				}
 			}
 

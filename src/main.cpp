@@ -18,6 +18,7 @@ int main()
         {
             std::cout << recip << "\n";
         }
+        std::cout << "\n";
     }
     return 0;
 }

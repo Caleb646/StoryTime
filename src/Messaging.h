@@ -129,17 +129,17 @@ namespace reader
 		}
 		void VerifyAttachmentTableIsValid_() const
 		{
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::AttachSize, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachFileName, types::PropertyType::String)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::AttachFileName, types::PropertyType::String)),
 				"Failed to find m_tc.hasCol(types::PidTagType::AttachFileName, types::PropertyType::String)");
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachMethod, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::AttachMethod, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::AttachMethod, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::RenderingPosition, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::RenderingPosition, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::RenderingPosition, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::LtpRowId, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_tc.hasColumn(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)");
 		}
 		void _setupAttachments(ndb::SubNodeBTree& messageObjectSubTree)
@@ -232,18 +232,15 @@ namespace reader
 			std::vector<std::string> emailAddresses{};
 			if (m_recip.has_value())
 			{
-				m_recip->load(); // Make sure recip Row Matrix is loaded
+				m_recip->loadRowMatrix(); // Make sure recip Row Matrix is loaded
 				emailAddresses.reserve(m_recip->nRows());
 				auto emailInfo = types::PidTagTypeCombo::RecipEmailAddress;
 				for (const auto& rowID : m_recip->getRowIDs())
 				{
-					const std::vector<ltp::RowEntry> rowEntries = m_recip->getRow(rowID);
-					for (const auto& entry : rowEntries)
+					ltp::RowEntry* rowEntry = m_recip->getSingleRowAndLoadColumn(rowID, static_cast<types::PidTagType>(emailInfo.pid));
+					if (rowEntry != nullptr)
 					{
-						if (entry.propID == emailInfo.pid && entry.propType == emailInfo.type)
-						{
-							emailAddresses.push_back(utils::UTF16BytesToString(entry.data));
-						}
+						emailAddresses.push_back(utils::UTF16BytesToString(rowEntry->data));
 					}
 				}
 				return emailAddresses;
@@ -350,37 +347,37 @@ namespace reader
 		{
 			if (m_recip.has_value())
 			{
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::RecipientType, types::PropertyType::Integer32)),
 					"Failed: recip->hasCol(types::PidTagType::RecipientType, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::Responsibility, types::PropertyType::Boolean)),
 					"Failed: recip->hasCol(types::PidTagType::Responsibility, types::PropertyType::Boolean)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::RecordKey, types::PropertyType::Binary)),
 					"Failed: recip->hasCol(types::PidTagType::RecordKey, types::PropertyType::Binary)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::ObjectType, types::PropertyType::Integer32)),
 					"Failed: recip->hasCol(types::PidTagType::ObjectType, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::EntryId, types::PropertyType::Binary)),
 					"Failed: recip->hasCol(types::PidTagType::EntryId, types::PropertyType::Binary)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::DisplayName, types::PropertyType::String)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::DisplayName, types::PropertyType::String)),
 					"Failed: recip->hasCol(types::PidTagType::DisplayName, types::PropertyType::String)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::AddressType, types::PropertyType::String)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::AddressType, types::PropertyType::String)),
 					"Failed: recip->hasCol(types::PidTagType::AddressType, types::PropertyType::String)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::EmailAddress, types::PropertyType::String)),
 					"Failed: recip->hasCol(types::PidTagType::EmailAddress, types::PropertyType::String)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::SearchKey, types::PropertyType::Binary)),
 					"Failed: recip->hasCol(types::PidTagType::SearchKey, types::PropertyType::Binary)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::DisplayType, types::PropertyType::Integer32)),
 					"Failed: recip->hasCol(types::PidTagType::DisplayType, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)),
 					"Failed: recip->hasCol(types::PidTagType::SevenBitDisplayName, types::PropertyType::String)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)),
 					"Failed: recip->hasCol(types::PidTagType::SendRichInfo, types::PropertyType::Boolean)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::LtpRowId, types::PropertyType::Integer32)),
 					"Failed: recip->hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_recip->hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_recip->hasColumn(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)),
 					"Failed: recip->hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)");
 
-				const ltp::TColDesc ltpRowIdCol = m_recip->getCol(types::PidTagType::LtpRowId);
-				const ltp::TColDesc ltpRowVerCol = m_recip->getCol(types::PidTagType::LtpRowVer);
+				const ltp::TColDesc ltpRowIdCol = m_recip->getColumn(types::PidTagType::LtpRowId);
+				const ltp::TColDesc ltpRowVerCol = m_recip->getColumn(types::PidTagType::LtpRowVer);
 				STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4),
 					"Failed: ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4");
 				STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4),
@@ -562,53 +559,53 @@ namespace reader
 		{
 			//TODO: this assert doesnt pass. The PidTagType is found but it has the PropType of PTBinary not PTInt32
 				//ASSERT((hier.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::ContentCount, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::Subfolders, types::PropertyType::Boolean)), "[ERROR]");
 			// TODO: this assert doesnt pass. Pid Tag matches but it has PropType of PTstring
-			//ASSERT((hier.hasCol(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_hier.hasCol(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
+			//ASSERT((hier.hasColumn(types::PidTagType::ContainerClass, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::PstHiddenCount, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::PstHiddenUnread, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::LtpRowId, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_hier.hasColumn(types::PidTagType::LtpRowVer, types::PropertyType::Integer32)), "[ERROR]");
 
-			const ltp::TColDesc ltpRowIdCol = m_hier.getCol(types::PidTagType::LtpRowId);
-			const ltp::TColDesc ltpRowVerCol = m_hier.getCol(types::PidTagType::LtpRowVer);
+			const ltp::TColDesc ltpRowIdCol = m_hier.getColumn(types::PidTagType::LtpRowId);
+			const ltp::TColDesc ltpRowVerCol = m_hier.getColumn(types::PidTagType::LtpRowVer);
 			STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 			STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 		}
 
 		void VerifyFolderContentsTableContextIsValid_() const
 		{
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::Importance, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ClientSubmitTime, types::PropertyType::Time)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::SentRepresentingNameW, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageToMe, types::PropertyType::Boolean)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageCcMe, types::PropertyType::Boolean)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ConversationTopicW, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ConversationIndex, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::Importance, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ClientSubmitTime, types::PropertyType::Time)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::SentRepresentingNameW, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageToMe, types::PropertyType::Boolean)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageCcMe, types::PropertyType::Boolean)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ConversationTopicW, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ConversationIndex, types::PropertyType::Binary)), "[ERROR]");
 
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::DisplayCcW, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::DisplayToW, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageDeliveryTime, types::PropertyType::Time)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::DisplayCcW, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::DisplayToW, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageDeliveryTime, types::PropertyType::Time)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageFlags, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageSize, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::MessageStatus, types::PropertyType::Integer32)), "[ERROR]");
 
 			//ASSERT((contents.hasCol(types::PidTagType::ReplItemid, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ReplCopiedfromVersionhistory, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_contents.hasCol(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ReplChangenum, types::PropertyType::Integer64)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ReplVersionHistory, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ReplFlags, types::PropertyType::Integer32)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ReplCopiedfromVersionhistory, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ReplCopiedfromItemid, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_contents.hasColumn(types::PidTagType::ItemTemporaryFlags, types::PropertyType::Integer32)), "[ERROR]");
 
-			const ltp::TColDesc ltpRowIdCol = m_contents.getCol(types::PidTagType::LtpRowId);
-			const ltp::TColDesc ltpRowVerCol = m_contents.getCol(types::PidTagType::LtpRowVer);
+			const ltp::TColDesc ltpRowIdCol = m_contents.getColumn(types::PidTagType::LtpRowId);
+			const ltp::TColDesc ltpRowVerCol = m_contents.getColumn(types::PidTagType::LtpRowVer);
 			STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 			STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
 		}
