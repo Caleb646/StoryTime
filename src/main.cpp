@@ -8,7 +8,7 @@ int main()
     reader.read();
 
     reader::Folder* folder = reader.getFolder(std::string("Inbox"));
-    std::vector<reader::MessageObject> messages = folder->getNMessages(0, 2);
+    std::vector<reader::MessageObject> messages = folder->getNMessages(0, 50);
 
     for (auto& msg : messages)
     {

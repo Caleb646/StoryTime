@@ -1014,32 +1014,20 @@ namespace reader {
 				}
 			}
 
-			bool DataIsInHNID() const
+			[[nodiscard]] bool DataIsInHNID() const
 			{
-				if (info.isFixed && info.singleEntrySize <= 4) // Data Value
-				{
-					return true;
-				}
-				return false;
+				return info.isFixed && info.singleEntrySize <= 4;
 			}
 
-			bool DataIsInHeap() const
+			[[nodiscard]] bool DataIsInHeap() const
 			{
 				STORYT_ASSERT((data.size() == 4), "Data should be an HNID");
-				if ((info.isFixed && info.singleEntrySize > 4U) || (data[0] & 0x1FU) == 0U) // HID
-				{
-					return true;
-				}
-				return false;
+				return (info.isFixed && info.singleEntrySize > 4U) || (data[0] & 0x1FU) == 0U;
 			}
 
-			bool DataIsInSubNodeTree() const
+			[[nodiscard]] bool DataIsInSubNodeTree() const
 			{
-				if(!DataIsInHNID() && !DataIsInHeap())
-				{
-					return true;
-				}
-				return false;
+				return !DataIsInHNID() && !DataIsInHeap();
 			}
 		};
 
@@ -1061,18 +1049,12 @@ namespace reader {
 				}
 				return PropertyContext(nid, HN::Init(nid, std::move(*datatree)));
 			}
-
 			static PropertyContext Init(
 				core::NID nid, 
 				core::Ref<const ndb::NDB> ndb, 
 				const ndb::SubNodeBTree& subTree
 			)
 			{
-				static_assert(std::is_move_constructible_v<PropertyContext>, "PropertyContext must be move constructible");
-				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
-				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
-				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
-				//return PropertyContext(nid, ndb, HN::Init(nid, ndb), subTree);
 				return PropertyContext(nid, HN::Init(nid, ndb), subTree);
 			}
 
@@ -1081,66 +1063,64 @@ namespace reader {
 				core::Ref<const ndb::NDB> ndb
 			)
 			{
-				static_assert(std::is_move_constructible_v<PropertyContext>, "PropertyContext must be move constructible");
-				static_assert(std::is_move_assignable_v<PropertyContext>, "PropertyContext must be move assignable");
-				static_assert(std::is_copy_constructible_v<PropertyContext>, "PropertyContext must be copy constructible");
-				static_assert(std::is_copy_assignable_v<PropertyContext>, "PropertyContext must be copy assignable");
 				const auto nbt = ndb->get(nid);
-				//return PropertyContext(nid, ndb, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt.value().bidSub));
+				STORYT_ERRORIF(!nbt.has_value(), "Failed to find NBTEntry for Property Context with NID [{}]", nid.getNIDRaw());
 				return PropertyContext(nid, HN::Init(nid, ndb), ndb->InitSubNodeBTree(nbt->bidSub));
 			}
-
-			auto begin()
+			[[nodiscard]] Property* TryToGetProperty(uint32_t pid, types::PropertyType propType)
 			{
-				return m_properties.begin();
-			}
-
-			auto end()
-			{
-				return m_properties.end();
-			}
-
-			template<typename ConvertTo = Property, typename PropIDType>
-			ConvertTo getProperty(PropIDType propID)
-			{
-				// Load the property data on demand
-				_loadProperty(_convert(propID));
-				if constexpr (std::is_same_v<ConvertTo, Property>)
+				_loadProperty(pid); // attempt to load property
+				if (HasPropertyWPidAndPtypeOf(pid, propType))
 				{
-					return m_properties.at(_convert(propID));
+					return &m_properties.at(pid);
 				}
-				else
+				return nullptr;
+			}
+			[[nodiscard]] Property* TryToGetProperty(types::PidTagTypeCombo::Info info)
+			{
+				return TryToGetProperty(info.pid, info.type);
+			}
+			[[nodiscard]] Property* TryToGetProperty(types::PidTagType pid, types::PropertyType propType)
+			{
+				return TryToGetProperty(static_cast<uint32_t>(pid), propType);
+			}
+			[[nodiscard]] bool HasPropertyWPidOf(uint32_t pid) const
+			{
+				return m_properties.contains(pid);
+			}
+			[[nodiscard]] bool HasPropertyWPidOf(types::PidTagType pid) const
+			{
+				return HasPropertyWPidOf(static_cast<uint32_t>(pid));
+			}
+			[[nodiscard]] bool HasPropertyWPidAndPtypeOf(uint32_t pid, types::PropertyType propType) const
+			{
+				if (m_properties.contains(pid))
 				{
-					return m_properties.at(_convert(propID)).as<ConvertTo>();
-				}	
+					const Property& prop = m_properties.at(pid);
+					if (prop.propType == propType)
+					{
+						return true;
+					}
+				}
+				return false;
 			}
-
-			template<typename PropIDType>
-			bool exists(PropIDType propID) const
+			[[nodiscard]] bool HasPropertyWPidAndPtypeOf(types::PidTagType pid, types::PropertyType propType) const
 			{
-				return m_properties.contains(_convert(propID));
+				return HasPropertyWPidAndPtypeOf(static_cast<uint32_t>(pid), propType);
 			}
-
-			template<typename PropIDType>
-			bool is(PropIDType propID, types::PropertyType propType) const
+			[[nodiscard]] bool HasPropertyWPidAndPtypeOf(types::PidTagTypeCombo::Info info) const
 			{
-				return m_properties.at(_convert(propID)).propType == propType;
-			}
-
-			template<typename PropIDType>
-			bool valid(PropIDType propID, types::PropertyType propType) const
-			{
-				return exists(propID) && is(propID, propType);
+				return HasPropertyWPidAndPtypeOf(info.pid, info.type);
 			}
 	
 		private:
-			PropertyContext(core::NID nid, HN&& hn)
+			explicit PropertyContext(core::NID nid, HN&& hn)
 				: m_nid(nid), m_hn(std::move(hn)), m_bth(m_hn, m_hn.getHeader().hidUserRoot) 
 			{
 				_init();
 			}
 
-			PropertyContext(
+			explicit PropertyContext(
 				core::NID nid, 
 				HN&& hn, 
 				const ndb::SubNodeBTree& subTree
@@ -1156,15 +1136,17 @@ namespace reader {
 			{
 				_init();
 			}
-
 			void _init()
+			{
+				VerifyTableContextIsValid_();
+				_loadMetaProps();
+			}
+			void VerifyTableContextIsValid_() const
 			{
 				STORYT_ASSERT((m_hn.getBType() == types::BType::PC), "m_hn.getBType() != types::BType::PC");
 				STORYT_ASSERT((m_bth.getKeySize() == 2), "m_bth.getKeySize() != 2");
 				STORYT_ASSERT((m_bth.getDataSize() == 6), "m_bth.getDataSize() != 6");
-				_loadMetaProps();
 			}
-
 			void _loadProperty(uint32_t propID)
 			{
 				Property& prop = m_properties.at(propID);
@@ -1216,31 +1198,12 @@ namespace reader {
 				STORYT_ASSERT((m_properties.size() == m_bth.nrecords()), "m_properties.size() != m_bth.nrecords()");
 			}
 
-			template<typename PropIDType>
-			PropertyID_t _convert(PropIDType id) const
-			{
-				if constexpr (std::is_same_v<PropIDType, PropertyID_t>)
-				{
-					return id;
-				}
-				else if constexpr (std::is_same_v<PropIDType, types::PidTagType>)
-				{
-					return static_cast<PropertyID_t>(id);
-				}
-				else
-				{
-					STORYT_ASSERT(false, "Invalid PropIDType");
-				}	
-			}
-
 		private:
 			std::unordered_map<PropertyID_t, Property> m_properties{};
 			core::NID m_nid;
-			//core::Ref<const ndb::NDB> m_ndb;
 			std::optional<ndb::SubNodeBTree> m_subtree;
 			HN m_hn;
-			BTreeHeap m_bth; /// m_bth has to be initialized after m_hn
-			
+			BTreeHeap m_bth; /// m_bth has to be initialized after m_hn	
 		};
 
 		struct RowEntry

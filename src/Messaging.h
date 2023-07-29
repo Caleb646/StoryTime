@@ -26,20 +26,38 @@ namespace reader
 		explicit Attachment(ltp::PropertyContext&& pc)
 			: m_pc(std::move(pc)) 
 		{
-			_VerifyAttachmentPropertyContextIsValid();
+			VerifyAttachmentPropertyContextIsValid_();
 			STORYT_INFO("Attachment Mime Type Header [{}]", getMimeType());
 		}
 		[[nodiscard]] int32_t getSize()
 		{
-			return m_pc.getProperty(types::PidTagType::AttachSize).asPTInt32();
+			ltp::Property* prop = m_pc.TryToGetProperty(types::PidTagType::AttachSize, types::PropertyType::Integer32);
+			if (prop)
+			{
+				return prop->asPTInt32();
+			}
+			STORYT_ASSERT(false, "Failed to getSize of Attachment");
+			return -1;
 		}
 		[[nodiscard]] int32_t getMethod()
 		{
-			return m_pc.getProperty(types::PidTagType::AttachMethod).asPTInt32();
+			ltp::Property* prop = m_pc.TryToGetProperty(types::PidTagType::AttachMethod, types::PropertyType::Integer32);
+			if (prop)
+			{
+				return prop->asPTInt32();
+			}
+			STORYT_ASSERT(false, "Failed to getMethod of Attachment");
+			return -1;
 		}
 		[[nodiscard]] std::string getMimeType()
 		{
-			return m_pc.getProperty(types::PidTagType::AttachMimeTag).asPTString().data;
+			ltp::Property* prop = m_pc.TryToGetProperty(types::PidTagType::AttachMimeTag, types::PropertyType::String);
+			if (prop)
+			{
+				return prop->asPTString().data;
+			}
+			STORYT_ASSERT(false, "Failed to getMimeType of Attachment");
+			return {};
 		}
 		[[nodiscard]] std::vector<types::byte_t> getContent()
 		{
@@ -49,30 +67,32 @@ namespace reader
 			* the nid value of the PtypObject property structure is a subnode which is a fully formed message
 			* with the exception that such attached messages are not located in the NBT and do not have a parent folder.
 			*/
-			const ltp::Property data = m_pc.getProperty(types::PidTagType::AttachDataBinaryOrDataObject);
-			if (data.propType == types::PropertyType::Binary) // Content is stored in data.data
 			{
-				return data.data;
+				ltp::Property* data = m_pc.TryToGetProperty(types::PidTagType::AttachDataBinaryOrDataObject, types::PropertyType::Binary);
+				if (data)
+				{
+					return data->data;
+				}
 			}
-			else if (data.propType == types::PropertyType::Object) // Content is a Sub Message Object with the nid being in PTObject
 			{
-				STORYT_ASSERT(false, 
-					"Attachments with AttachDataObject set are nested Message Objects and they are not implemented currently");
-				return {};
+				ltp::Property* data = m_pc.TryToGetProperty(types::PidTagType::AttachDataBinaryOrDataObject, types::PropertyType::Object);
+				if (data)
+				{
+					STORYT_ASSERT(false,
+						"Attachments with AttachDataObject set are nested Message Objects and they are not implemented currently");
+					return {};
+				}
 			}
-			else
-			{
-				STORYT_ASSERT(false, 
-					"Attachments content PropType [{}] was not valid", static_cast<uint32_t>(data.propType));
-				return {};
-			}
+			STORYT_ASSERT(false, 
+				"Attachments content PropType was not valid");
+			return {};
 		}
 	private:
-		void _VerifyAttachmentPropertyContextIsValid() const
+		void VerifyAttachmentPropertyContextIsValid_() const
 		{
-			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachSize)),
+			STORYT_ASSERT((m_pc.HasPropertyWPidOf(types::PidTagType::AttachSize)),
 				"AttachSize must be present on valid Attachment");
-			STORYT_ASSERT((m_pc.exists(types::PidTagType::AttachMethod)),
+			STORYT_ASSERT((m_pc.HasPropertyWPidOf(types::PidTagType::AttachMethod)),
 				"AttachMethod must be present on valid Attachment");
 		}
 	private:
@@ -104,10 +124,10 @@ namespace reader
 		explicit AttachmentTable(ltp::TableContext&& tc, ndb::SubNodeBTree& messageObjectSubTree)
 			: m_tc(std::move(tc))
 		{
-			_VerifyAttachmentTableIsValid();
+			VerifyAttachmentTableIsValid_();
 			_setupAttachments(messageObjectSubTree);
 		}
-		void _VerifyAttachmentTableIsValid() const
+		void VerifyAttachmentTableIsValid_() const
 		{
 			STORYT_ASSERT((m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)),
 				"Failed to find m_tc.hasCol(types::PidTagType::AttachSize, types::PropertyType::Integer32)");
@@ -198,10 +218,10 @@ namespace reader
 
 		[[nodiscard]] std::string getSender()
 		{
-			auto [succeeded, data] = _TryToGetProperty(types::PidTagTypeCombo::SenderEmailAddress);
-			if (succeeded)
+			ltp::Property* prop = TryToGetProperty_(types::PidTagTypeCombo::SenderEmailAddress);
+			if (prop)
 			{
-				return data;
+				return prop->asPTString().data;
 			}
 			STORYT_ASSERT(false, "Failed to getFrom for Message with NID [{}]", m_nid.getNIDRaw());
 			return {};
@@ -234,10 +254,10 @@ namespace reader
 
 		[[nodiscard]] std::string getSubject()
 		{
-			auto [succeeded, data] = _TryToGetProperty(types::PidTagTypeCombo::MessageSubject);
-			if (succeeded)
+			ltp::Property* prop = TryToGetProperty_(types::PidTagTypeCombo::MessageSubject);
+			if (prop)
 			{
-				return data;
+				return prop->asPTString().data;
 			}
 			STORYT_ASSERT(false, "Failed to getSubject for Message with NID [{}]", m_nid.getNIDRaw());
 			return {};
@@ -246,17 +266,17 @@ namespace reader
 		[[nodiscard]] std::string getBody()
 		{
 			{
-				auto [succeeded, data] = _TryToGetProperty(types::PidTagTypeCombo::MessageBody);
-				if (succeeded)
+				ltp::Property* prop = TryToGetProperty_(types::PidTagTypeCombo::MessageBody);
+				if (prop)
 				{
-					return data;
+					return prop->asPTString().data;
 				}
 			}
 			{
-				auto [succeeded, data] = _TryToGetProperty(types::PidTagTypeCombo::BodyHtml);
-				if (succeeded)
+				ltp::Property* prop = TryToGetProperty_(types::PidTagTypeCombo::BodyHtml);
+				if (prop)
 				{
-					return data;
+					return prop->asPTString().data;
 				}
 			}
 			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}]", m_nid.getNIDRaw());
@@ -284,21 +304,17 @@ namespace reader
 			_init();
 		}
 
-		std::pair<bool, std::string> _TryToGetProperty(types::PidTagTypeCombo::Info info)
+		ltp::Property* TryToGetProperty_(types::PidTagTypeCombo::Info info)
 		{
 			if (m_pc.has_value())
 			{
-				if (m_pc->valid(info.pid, info.type))
+				if (m_pc->HasPropertyWPidAndPtypeOf(info))
 				{
-					const ltp::Property prop = m_pc->getProperty(info.pid);
-					if (prop.propType == info.type);
-					{
-						return { true, prop.asPTString().data };
-					}
+					return m_pc->TryToGetProperty(info);
 				}
 			}
 			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}]", m_nid.getNIDRaw());
-			return {false, ""};
+			return nullptr;
 		}
 
 		void _init()
@@ -311,17 +327,17 @@ namespace reader
 		{
 			if (m_pc.has_value())
 			{
-				STORYT_ASSERT((m_pc->is(types::PidTagType::MessageClassW, types::PropertyType::String)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::MessageClassW, types::PropertyType::String)),
 					"Failed: pc.is(types::PidTagType::MessageClassW, types::PropertyType::String)");
-				STORYT_ASSERT((m_pc->is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::MessageFlags, types::PropertyType::Integer32)),
 					"Failed: pc.is(types::PidTagType::MessageFlags, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_pc->is(types::PidTagType::MessageSize, types::PropertyType::Integer32)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::MessageSize, types::PropertyType::Integer32)),
 					"Failed: pc.is(types::PidTagType::MessageSize, types::PropertyType::Integer32)");
-				STORYT_ASSERT((m_pc->is(types::PidTagType::CreationTime, types::PropertyType::Time)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::CreationTime, types::PropertyType::Time)),
 					"Failed: pc.is(types::PidTagType::CreationTime, types::PropertyType::Time)");
-				STORYT_ASSERT((m_pc->is(types::PidTagType::LastModificationTime, types::PropertyType::Time)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::LastModificationTime, types::PropertyType::Time)),
 					"Failed: pc.is(types::PidTagType::LastModificationTime, types::PropertyType::Time)");
-				STORYT_ASSERT((m_pc->is(types::PidTagType::SearchKey, types::PropertyType::Binary)),
+				STORYT_ASSERT((m_pc->HasPropertyWPidAndPtypeOf(types::PidTagType::SearchKey, types::PropertyType::Binary)),
 					"Failed: pc.is(types::PidTagType::SearchKey, types::PropertyType::Binary)");
 			}
 			else
@@ -525,20 +541,20 @@ namespace reader
 			VerifyFolderNormalPropertContextIsValid_();
 			VerifyFolderHierarchyTableContextIsValid_();
 			VerifyFolderContentsTableContextIsValid_();
-			m_folderName = m_normal.getProperty<ltp::PTString>(types::PidTagType::DisplayName).data;
+			_setupFolderName();
 			_setupSubFolders();
 			//_setupMessages();
 		}
 
 		void VerifyFolderNormalPropertContextIsValid_() const
 		{
-			STORYT_ASSERT((m_normal.valid(types::PidTagType::DisplayName, types::PropertyType::String)),
+			STORYT_ASSERT((m_normal.HasPropertyWPidAndPtypeOf(types::PidTagType::DisplayName, types::PropertyType::String)),
 				"Failed: normal.valid(types::PidTagType::DisplayName, types::PropertyType::String)");
-			STORYT_ASSERT((m_normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_normal.HasPropertyWPidAndPtypeOf(types::PidTagType::ContentCount, types::PropertyType::Integer32)),
 				"Failed: normal.valid(types::PidTagType::ContentCount, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)),
+			STORYT_ASSERT((m_normal.HasPropertyWPidAndPtypeOf(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)),
 				"Failed: normal.valid(types::PidTagType::ContentUnreadCount, types::PropertyType::Integer32)");
-			STORYT_ASSERT((m_normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)),
+			STORYT_ASSERT((m_normal.HasPropertyWPidAndPtypeOf(types::PidTagType::Subfolders, types::PropertyType::Boolean)),
 				"Failed: normal.valid(types::PidTagType::Subfolders, types::PropertyType::Boolean)");
 		}
 
@@ -595,6 +611,19 @@ namespace reader
 			const ltp::TColDesc ltpRowVerCol = m_contents.getCol(types::PidTagType::LtpRowVer);
 			STORYT_ASSERT((ltpRowIdCol.iBit == 0 && ltpRowIdCol.ibData == 0 && ltpRowIdCol.cbData == 4), "[ERROR]");
 			STORYT_ASSERT((ltpRowVerCol.iBit == 1 && ltpRowVerCol.ibData == 4 && ltpRowVerCol.cbData == 4), "[ERROR]");
+		}
+
+		void _setupFolderName()
+		{
+			ltp::Property* prop = m_normal.TryToGetProperty(types::PidTagType::DisplayName, types::PropertyType::String);
+			if (prop)
+			{
+				m_folderName = prop->asPTString().data;
+			}
+			else
+			{
+				STORYT_ASSERT(false, "Failed to Setup Folder Name with NID of [{}]", m_nid.getNIDRaw());
+			}
 		}
 
 		void _setupSubFolders()
@@ -669,20 +698,20 @@ namespace reader
 		}
 
 	public:
-		template<typename PropType>
-		PropType as(types::PidTagType pt)
+		std::optional<EntryID> getEntryID(types::PidTagType pid)
 		{
-			if constexpr (std::is_same_v<PropType, EntryID>)
+			ltp::Property* entryIDProp = m_pc.TryToGetProperty(pid, types::PropertyType::Binary);
+			ltp::Property* entryRecordKeyProp = m_pc.TryToGetProperty(types::PidTagType::RecordKey, types::PropertyType::Binary);
+			if (entryIDProp && entryRecordKeyProp)
 			{
 				return EntryID(
-					m_pc.getProperty(pt).asPTBinary().data,
-					m_pc.getProperty(types::PidTagType::RecordKey).asPTBinary().data
+					entryIDProp->asPTBinary().data,
+					entryRecordKeyProp->data
 				);
 			}
-			else
-			{
-				return m_pc.getProperty(pt).as<PropType>();
-			}
+			STORYT_ASSERT(false, "Failed to EntryID with PID of [{}]", static_cast<uint32_t>(pid));
+			return std::nullopt;
+			
 		}
 
 	private:
@@ -690,17 +719,17 @@ namespace reader
 			: m_nid(nid), m_ndb(ndb), m_pc(pc)
 		{
 			VerifyMessageStorePropertyContextIsValid_();
-			STORYT_INFO("Message Store Display Name: [{}]",
-				as<ltp::PTString>(types::PidTagType::DisplayName).data);
+	/*		STORYT_INFO("Message Store Display Name: [{}]",
+				as<ltp::PTString>(types::PidTagType::DisplayName).data);*/
 		}
 
 		void VerifyMessageStorePropertyContextIsValid_() const
 		{
-			STORYT_ASSERT((m_pc.valid(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_pc.valid(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
-			STORYT_ASSERT((m_pc.valid(types::PidTagType::IpmSubTreeEntryId, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_pc.valid(types::PidTagType::IpmWastebasketEntryId, types::PropertyType::Binary)), "[ERROR]");
-			STORYT_ASSERT((m_pc.valid(types::PidTagType::FinderEntryId, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_pc.HasPropertyWPidAndPtypeOf(types::PidTagType::RecordKey, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_pc.HasPropertyWPidAndPtypeOf(types::PidTagType::DisplayName, types::PropertyType::String)), "[ERROR]");
+			STORYT_ASSERT((m_pc.HasPropertyWPidAndPtypeOf(types::PidTagType::IpmSubTreeEntryId, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_pc.HasPropertyWPidAndPtypeOf(types::PidTagType::IpmWastebasketEntryId, types::PropertyType::Binary)), "[ERROR]");
+			STORYT_ASSERT((m_pc.HasPropertyWPidAndPtypeOf(types::PidTagType::FinderEntryId, types::PropertyType::Binary)), "[ERROR]");
 		}
 
 	private:
@@ -714,7 +743,7 @@ namespace reader
 	public:
 		Messaging(core::Ref<const ndb::NDB> ndb, core::Ref<const ltp::LTP> ltp)
 			: m_ndb(ndb), m_ltp(ltp), m_store(MessageStore::Init(core::NID_MESSAGE_STORE, ndb)),
-			m_rootFolder(Folder::Init(m_store.as<EntryID>(types::PidTagType::IpmSubTreeEntryId).nid, ndb)) {}
+			m_rootFolder(Folder::Init(m_store.getEntryID(types::PidTagType::IpmSubTreeEntryId)->nid, ndb)) {}
 		
 		template<typename FolderID>
 		[[nodiscard]] Folder* getFolder(const FolderID& folderID)
