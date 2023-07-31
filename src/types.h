@@ -4,13 +4,12 @@
 #include <string>
 #include <fstream>
 
-#ifndef READER_TYPES_H
-#define READER_TYPES_H
+#ifndef STORYT_TYPES_H
+#define STORYT_TYPES_H
 
-namespace reader::types {
+namespace storyt::types {
 
     using byte_t = unsigned char;
-    using utf16le_t = uint16_t;
 
     enum class PType : uint32_t
     {
@@ -89,14 +88,6 @@ namespace reader::types {
         LEVEL_13 = 0xD, // 16 - 32 bytes free
         LEVEL_14 = 0xE, // 8 - 16 bytes free
         LEVEL_FULL = 0xF, // Data block has less than 8 bytes free
-    };
-
-    enum class Entry
-    {
-        INVALID,
-        BTENTRY,
-        BBTENTRY,
-        NBTENTRY
     };
 
     enum class PropertyType : uint32_t

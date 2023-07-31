@@ -10,11 +10,11 @@
 #include "types.h"
 #include "utils.h"
 
-#ifndef READER_CORE_H
-#define READER_CORE_H
+#ifndef STORYT_CORE_H
+#define STORYT_CORE_H
 
 
-namespace reader::core {
+namespace storyt::core {
     /**
     * @brief = Every block allocated in the PST file is identified using the BID structure.
     *  This structure varies in size according the format of the file. In the case of ANSI files,

@@ -15,10 +15,10 @@
 #include "NDB.h"
 #include "LTP.h"
 
-#ifndef READER_MESSAGING_H
-#define READER_MESSAGING_H
+#ifndef STORYT_MESSAGING_H
+#define STORYT_MESSAGING_H
 
-namespace reader
+namespace storyt
 {
 	class Attachment
 	{

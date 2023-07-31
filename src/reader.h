@@ -12,12 +12,12 @@
 #include "LTP.h"
 #include "Messaging.h"
 
-#ifndef PST_READER_H
-#define PST_READER_H
+#ifndef STORYT_PST_READER_H
+#define STORYT_PST_READER_H
 
 
 
-namespace reader
+namespace storyt
 {
     class PSTReader
     {

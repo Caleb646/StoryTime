@@ -39,14 +39,14 @@
 
 #define STORYT_VERIFY(cond, ...) if(!cond) throw std::runtime_error("")
 
-#ifndef READER_UTILS_H
-#define READER_UTILS_H
+#ifndef STORYT_UTILS_H
+#define STORYT_UTILS_H
 
 // NOLINTEND
 
 #include "types.h"
 
-namespace reader::utils {
+namespace storyt::utils {
 
     const std::vector<int64_t> NID_TYPES_VALUES = {
             0x00,

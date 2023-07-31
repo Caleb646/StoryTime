@@ -4,17 +4,17 @@
 int main()
 {
     //reader::PSTReader reader("C:\\Users\\caleb\\Coding_Projects\\CPP Projects\\PST File Reader\\data\\Test.pst");
-    reader::PSTReader reader("C:\\Users\\caleb\\Documents\\Outlook Files\\Outlook.pst");
+    storyt::PSTReader reader("C:\\Users\\caleb\\Documents\\Outlook Files\\Outlook.pst");
     reader.read();
 
-    reader::Folder* folder = reader.getFolder(std::string("Inbox"));
+    storyt::Folder* folder = reader.getFolder(std::string("Inbox"));
     
     std::cout << folder->nMessages() << "\n";
 
     const size_t batchSize = 50;
-    for (size_t i = 0; i < folder->nMessages(); i+=50)
+    for (size_t i = 0; i < folder->nMessages(); i += batchSize)
     {
-        std::vector<reader::MessageObject> messages = folder->getNMessages(i, i+batchSize);
+        std::vector<storyt::MessageObject> messages = folder->getNMessages(i, i+batchSize);
         for (auto& msg : messages)
         {
             std::string subject = msg.getSubject();

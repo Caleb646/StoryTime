@@ -14,10 +14,10 @@
 #include "utils.h"
 #include "core.h"
 
-#ifndef READER_NDB_H
-#define READER_NDB_H
+#ifndef STORYT_NDB_H
+#define STORYT_NDB_H
 
-namespace reader::ndb {
+namespace storyt::ndb {
 
     struct PageTrailer
     {
@@ -381,7 +381,7 @@ namespace reader::ndb {
                     // the NID Type and NID Index.
                     if (entry.getCachedNBTNID().getNIDIndex() == nid.getNIDIndex())
                     {
-                        NBTEntry nbt = entry.asNBTEntry();
+                        const NBTEntry nbt = entry.asNBTEntry();
                         STORYT_ASSERT(!entries.contains(nbt.nid.getNIDType()), "Duplicate NID Type found in NBT");
                         entries[nbt.nid.getNIDType()] = nbt;
                     }
@@ -401,7 +401,6 @@ namespace reader::ndb {
             {
                 for (const auto& entry : rgentries)
                 {
-                    //const EntryType e = entry.as<EntryType>();
                     if constexpr (std::is_same_v<EntryIDType, core::NID>)
                     {
                         if (entry.getCachedNBTNID() == id)
@@ -422,8 +421,7 @@ namespace reader::ndb {
             {
                 for (size_t i = 0; i < rgentries.size(); ++i)
                 {
-                    //const BTEntry bt = rgentries.at(i).as<BTEntry>();
-                    uint64_t btkey = rgentries.at(i).getCachedBTKey();
+                    const uint64_t btkey = rgentries.at(i).getCachedBTKey();
                     if (id > btkey || id == btkey)
                     {
                         std::optional<EntryType> ret = subPages.at(i).get<EntryType>(id);
@@ -434,7 +432,7 @@ namespace reader::ndb {
                     }
                 }
             }
-            return {};
+            return std::nullopt;
         }
 
         [[nodiscard]] size_t getEntryType() const
