@@ -10,7 +10,8 @@
 
 namespace types_tests
 {
-	using namespace reader::types;
+	using namespace storyt::types;
+
 	TEST(TypesTest, TypesSizeTest)
 	{
 		static_assert(sizeof(byte_t) == 1);

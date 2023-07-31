@@ -12,8 +12,8 @@
 
 namespace core_tests
 {
-	using namespace reader::types;
-	using namespace reader::utils;
-	using namespace reader::core;
+	using namespace storyt::types;
+	using namespace storyt::utils;
+	using namespace storyt::core;
 
 };

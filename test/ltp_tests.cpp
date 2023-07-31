@@ -14,11 +14,11 @@
 
 namespace ltp_tests
 {
-	using namespace reader::types;
-	using namespace reader::utils;
-	using namespace reader::core;
-	using namespace reader::ndb;
-	using namespace reader::ltp;
+	using namespace storyt::types;
+	using namespace storyt::utils;
+	using namespace storyt::core;
+	using namespace storyt::ndb;
+	using namespace storyt::ltp;
 
 	const std::vector<byte_t> sample_HN = {
 	0xEC, 0x00, 0xEC, 0xBC, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB5, 0x02, 0x06, 0x00,

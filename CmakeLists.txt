@@ -1,11 +1,48 @@
 
 cmake_minimum_required(VERSION 3.21)
-project(pst_reader VERSION 0.1.0)
+project(storyt VERSION 0.1.0)
+
+include(cmake/storytCompilerWarnings.cmake)
+# ---------------------------------------------------------------------------------------
+# Provides a set of variables containing installation directories for various artifacts
+# ---------------------------------------------------------------------------------------
+include(GNUInstallDirs)
+# ---------------------------------------------------------------------------------------
+# CMake package containing the macros parsing versions is included.
+# ---------------------------------------------------------------------------------------
+include(CMakePackageConfigHelpers)
+
 
 set(CMAKE_CXX_STANDARD 20)
 option(STORYT_BUILD_TEST off)
 set(STORYT_BUILD_SPDLOG true)
 
+# ---------------------------------------------------------------------------------------
+# Set default build to release
+# ---------------------------------------------------------------------------------------
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
+endif()
+
+# ---------------------------------------------------------------------------------------
+# Set STORYT_MASTER_PROJECT to ON if we are building spdlog
+# ---------------------------------------------------------------------------------------
+# Check if spdlog is being used directly or via add_subdirectory, but allow overriding
+if(NOT DEFINED STORYT_MASTER_PROJECT)
+    if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+        set(STORYT_MASTER_PROJECT ON)
+    else()
+        set(STORYT_MASTER_PROJECT OFF)
+    endif()
+endif()
+
+option(STORYT_BUILD_EXAMPLE "Build example" ${STORYT_MASTER_PROJECT})
+option(STORYT_INSTALL "Generate the install target" ${STORYT_MASTER_PROJECT})
+
+# ---------------------------------------------------------------------------------------
+# If the top level cmake project is our project and BUILDING_TESTING is true then fetch and install
+# Googletest and set STORYTIME_BUILD_SPDLOG to false.
+# ---------------------------------------------------------------------------------------
 if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR STORYT_BUILD_TEST) AND BUILD_TESTING) 
     include(CTest) 
     add_subdirectory("test")
@@ -13,76 +50,121 @@ if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR STORYT_BUILD_TEST) AND BUILD_TES
     set(STORYT_BUILD_SPDLOG false)
 endif()
 
-if(STORYT_BUILD_SPDLOG)
-    include(FetchContent)
-    FetchContent_Declare(
-      spdlog
-      GIT_REPOSITORY https://github.com/gabime/spdlog.git
-      GIT_TAG v1.12.0
-    )
-    FetchContent_MakeAvailable(spdlog)
-endif()
-
 #include(CMakePrintHelpers)
 #cmake_print_variables(STORYT_SHOULD_BUILD_SPDLOG)
 
-set(MSVC_WARNINGS
-    "/W4" # Baseline reasonable warnings
-    "/w14242" # 'identifier': conversion from 'type1' to 'type1', possible loss of data
-    "/w14254" # 'operator': conversion from 'type1:field_bits' to 'type2:field_bits', possible loss of data
-    "/w14263" # 'function': member function does not override any base class virtual member function
-    "/w14265" # 'classname': class has virtual functions, but destructor is not virtual instances of this class may not
-                # be destructed correctly
-    "/w14287" # 'operator': unsigned/negative constant mismatch
-    "/we4289" # nonstandard extension used: 'variable': loop control variable declared in the for-loop is used outside
-                # the for-loop scope
-    "/w14296" # 'operator': expression is always 'boolean_value'
-    "/w14311" # 'variable': pointer truncation from 'type1' to 'type2'
-    "/w14545" # expression before comma evaluates to a function which is missing an argument list
-    "/w14546" # function call before comma missing argument list
-    "/w14547" # 'operator': operator before comma has no effect; expected operator with side-effect
-    "/w14549" # 'operator': operator before comma has no effect; did you intend 'operator'?
-    "/w14555" # expression has no effect; expected expression with side- effect
-    "/w14619" # pragma warning: there is no warning number 'number'
-    "/w14640" # enable warning on thread un-safe static member initialization
-    "/w14826" # conversion from 'type1' to 'type_2' is sign-extended. this may cause unexpected runtime behavior.
-    "/w14905" # wide string literal cast to 'lpstr'
-    "/w14906" # string literal cast to 'lpwstr'
-    "/w14928" # illegal copy-initialization; more than one user-defined conversion has been implicitly applied
-    "/permissive-" # standards conformance mode for msvc compiler.
-    #"/wx" # treat warnings as errors
+
+# ---------------------------------------------------------------------------------------
+# The keyword INTERFACE makes the target a header-only library that does not need to be compiled.
+# ---------------------------------------------------------------------------------------
+add_library(storyt INTERFACE)
+# ---------------------------------------------------------------------------------------
+# $<BUILD_INTERFACE:SI_SOURCE_DIR}/include> tells CMake that if the library is used directly by another 
+# CMake target (such as when building tests for the library or when it is included as a subdirectory), 
+# then the include path is ${PROJECT_SOURCE_DIR}/include} which is a nested variable.
+# ---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}> defines the path if the project is installed.
+# ---------------------------------------------------------------------------------------
+target_include_directories(
+  storyt
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+# ---------------------------------------------------------------------------------------
+# Specifies compiler features to be enabled in a compiler-agnostic way.
+# ---------------------------------------------------------------------------------------
+target_compile_features(storyt INTERFACE cxx_std_20)
 
 
-set(CLANG_WARNINGS
-    #-Wall
-    -Wmisleading-indentation
-    -Wmost
-    -Wpacked
-    -Wparentheses
-    -Wswitch
-    -Wswitch-bool
-    -Wextra # reasonable and standard
-    -Wshadow # warn the user if a variable declaration shadows one from a parent context
-    -Wnon-virtual-dtor # warn the user if a class with virtual functions has a non-virtual destructor. This helps
-    # catch hard to track down memory errors
-    -Wold-style-cast # warn for c-style casts
-    -Wcast-align # warn for potential performance problem casts
-    -Wunused # warn on anything being unused
-    -Woverloaded-virtual # warn if you overload (not override) a virtual function
-    -Wpedantic # warn if non-standard C++ is used
-    -Wconversion # warn on type conversions that may lose data
-    -Wsign-conversion # warn on sign conversions
-    -Wnull-dereference # warn if a null dereference is detected
-    -Wdouble-promotion # warn if float is implicit promoted to double
-    -Wformat=2 # warn on security issues around functions that format output (ie printf)
-    -Wimplicit-fallthrough # warn on statements that fallthrough without an explicit annotation
-)
-
-add_executable(pst_reader "src/main.cpp")
-target_compile_options(pst_reader PUBLIC ${CLANG_WARNINGS})
-target_include_directories(pst_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(STORYT_BUILD_SPDLOG)
-    target_link_libraries(pst_reader PRIVATE spdlog::spdlog)
-    add_compile_definitions(STORYT_BUILD_SPDLOG_=true)
+if(STORYT_INSTALL)
+    # ---------------------------------------------------------------------------------------
+    # The folders for the installation artifacts are set. The folder names are relative 
+    # to what the user defines in the CMAKE_INSTALL_PREFIX variable.
+    #
+    # The target paths are provided by GNUInstallDirs
+    # ---------------------------------------------------------------------------------------
+    install(
+        TARGETS storyt
+        EXPORT ${PROJECT_NAME}_Targets # The EXPORT associates the installation with an export-form named ${PROJECT_NAME}_Targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} # All files that are neither executables, shared libraries (.so), header files.
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # All shared libraries (.so/.dll) files, typically all binaries produced by a call to
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # All executables built by an add_excutable call
+      # INCLUDE - All public header files, which is omitted here because the INSTALL_INTERFACE already specifies this.
+    ) 
+    # ---------------------------------------------------------------------------------------
+    # Then the macro write_basic_package_version_file is called and instructed to create a file storytConfigVersion.cmake .
+    # The version specified is the one supplied in the project directive at the beginning of the file.
+    # ---------------------------------------------------------------------------------------
+    write_basic_package_version_file(
+        "${PROJECT_NAME}ConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+    # ---------------------------------------------------------------------------------------
+    # CMake macro configure_package_config_file is called, to generate the configuration file which CMake uses for using an installed package.
+    # The version specified is the one supplied in the project directive at the beginning of the file.
+    #
+    # By specifying INSTALL_DESTINATION CMake is told where to place it when creating the installation artifact.
+    # The exact path is provided by GNUInstallDirs
+    # ---------------------------------------------------------------------------------------
+    configure_package_config_file(
+        # All the placeholders marked with @ in the ${PROJECT_NAME}Config.cmake.in file 
+        # are replaced with the explicit values and the file is written to the target .
+        "${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+        "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+        INSTALL_DESTINATION
+        ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
+    )
+    # ---------------------------------------------------------------------------------------
+    # The file containing the installation targets as defined above is created and copied to the installation folder. 
+    # The EXPORT keyword at the beginning tells CMake to export the installation targets which are defined in the file 
+    # storytTargets.cmake which is created in the build folder when building the project to the DESTINATION specified. 
+    # All targets are to be placed in the NAMESPACE story::
+    # ---------------------------------------------------------------------------------------
+    install(
+        EXPORT ${PROJECT_NAME}_Targets
+        FILE ${PROJECT_NAME}Targets.cmake
+        NAMESPACE ${PROJECT_NAME}::
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
+    )
+    # ---------------------------------------------------------------------------------------
+    # The created .cmake files containing the build configuration and information about version compatibility are to 
+    # be installed to the install folder as well. By providing the FILES keyword a list of files is given to be saved 
+    # in a folder specified by DESTINATION.
+    # ---------------------------------------------------------------------------------------
+    install(
+        FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+              "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
+    )
+    # ---------------------------------------------------------------------------------------
+    # The header files are copied to the installation folder. For header-only libraries usually, 
+    # all header files are supplied, so instead of providing individual files, the whole include 
+    # directory is copied using the DIRECTORY keyword.
+    # ---------------------------------------------------------------------------------------
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/include DESTINATION include)
 endif()
+
+if(STORYT_MASTER_PROJECT)
+    project(storyt_example)
+    add_executable(storyt_example "example/main.cpp")
+    target_compile_options(storyt_example PUBLIC ${STORYT_CLANG_WARNINGS})
+    target_include_directories(storyt_example PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    if(STORYT_BUILD_SPDLOG)
+        # ---------------------------------------------------------------------------------------
+        # If building with SPDLog then fetch and install it.
+        # ---------------------------------------------------------------------------------------
+        include(FetchContent)
+        FetchContent_Declare(
+          spdlog
+          GIT_REPOSITORY https://github.com/gabime/spdlog.git
+          GIT_TAG v1.12.0
+        )
+        FetchContent_MakeAvailable(spdlog)
+
+        target_link_libraries(storyt_example PRIVATE spdlog::spdlog)
+        add_compile_definitions(STORYT_BUILD_SPDLOG_=true)
+    endif()
+endif()
+

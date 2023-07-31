@@ -13,10 +13,10 @@
 
 namespace ndb_tests
 {
-	using namespace reader::types;
-	using namespace reader::utils;
-	using namespace reader::core;
-	using namespace reader::ndb;
+	using namespace storyt::types;
+	using namespace storyt::utils;
+	using namespace storyt::core;
+	using namespace storyt::ndb;
 
 	const std::vector<byte_t> sample_btpage = {
    0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
