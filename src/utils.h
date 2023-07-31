@@ -462,9 +462,9 @@ namespace reader::utils {
         }
     }
 
-    types::PidTagType PidTagType(uint32_t id)
+    types::PidTagType PidTagType(uint32_t pid)
     {
-        switch (id)
+        switch (pid)
         {
             case 0x0FF9: return types::PidTagType::RecordKey;
             case 0x3001: return types::PidTagType::DisplayName;
@@ -533,14 +533,14 @@ namespace reader::utils {
             case 0x3701: return types::PidTagType::AttachDataBinaryOrDataObject;
             case 0x3702: return types::PidTagType::AttachEncoding;
             default:
-                STORYT_ERROR("Unknown PidTagType: [{}] returned", id);
+                STORYT_ERROR("Unknown PidTagType: [{}] returned", pid);
                 return types::PidTagType::Unknown;
         }
     }
 
-    const char* PidTagTypeChar(uint32_t id)
+    const char* PidTagTypeChar(uint32_t pid)
     {
-        switch (id)
+        switch (pid)
         {                                                          
         case 0x0FF9: return "types::PidTagType::RecordKey;                          ";
         case 0x3001: return "types::PidTagType::DisplayName;                        ";
@@ -873,7 +873,7 @@ namespace reader::utils {
     {
     public:
         ArrayView(const std::array<DataType, Size>& data, size_t start, size_t end)
-        : m_data(data), m_start(start), m_end(end) {}
+            : m_data(data), m_start(start), m_end(end) {}
 
         template<typename To_t>
         To_t to(size_t size)
@@ -881,6 +881,12 @@ namespace reader::utils {
             const size_t start = m_start;
             m_start += size;
             return toT_l<To_t>(ArrayView<DataType, Size>(m_data, start, m_start));
+        }
+
+        ArrayView<DataType, Size>& setStart(size_t newStart)
+        {
+            m_start = newStart;
+            return *this;
         }
 
         DataType operator[] (size_t index) const

@@ -155,8 +155,18 @@ namespace reader::ndb {
     class Entry 
     {
     public:
-        explicit Entry(const std::vector<types::byte_t>& data) : m_data(data) {}
-        explicit Entry(const utils::Array<types::byte_t, 32>& data) : m_data(data) {}
+        static constexpr uint8_t EntryMaxSize = 32;
+    public:
+        explicit Entry(const std::vector<types::byte_t>& data) 
+            : m_data(data) 
+        {
+            _init();
+        }
+        explicit Entry(const utils::Array<types::byte_t, Entry::EntryMaxSize>& data) 
+            : m_data(data) 
+        {
+            _init();
+        }
 
         [[nodiscard]] BTEntry asBTEntry() const
         {
@@ -215,10 +225,34 @@ namespace reader::ndb {
                 return EntryType();
             }
 		}
-
+        core::NID getCachedNBTNID() const
+        {
+            return m_nid;
+        }
+        core::BID getCachedBBTBID() const
+        {
+            return m_bid;
+        }
+        uint64_t getCachedBTKey() const
+        {
+            return m_btkey;
+        }
+    private:
+        void _init()
+        {
+            utils::ArrayView view = m_data.view(0, Entry::EntryMaxSize);
+            // Read the first 8 bytes of every entry and cache the NID and BID values
+            // so searching is faster in the BTree
+            m_nid = core::NID(view.setStart(0).to<uint64_t>(8));
+            m_bid = core::BID(view.setStart(0).to<uint64_t>(8));
+            m_btkey = view.setStart(0).to<uint64_t>(8);
+        }
     private:
         // TODO: Should be maybe cache the results of as()
         utils::Array<types::byte_t, 32> m_data{};
+        core::NID m_nid;
+        core::BID m_bid;
+        uint64_t m_btkey;
     };
 
     class BTPage
@@ -342,12 +376,12 @@ namespace reader::ndb {
             {
                 for (auto entry : rgentries)
                 {
-                    NBTEntry nbt = entry.asNBTEntry();
                     // NID Index is used because a single PST Folder has 4 parts and those 4 parts
                     // have the same NID Index but different NID Types. The == operator for NID class compares
                     // the NID Type and NID Index.
-                    if (nbt.nid.getNIDIndex() == nid.getNIDIndex())
+                    if (entry.getCachedNBTNID().getNIDIndex() == nid.getNIDIndex())
                     {
+                        NBTEntry nbt = entry.asNBTEntry();
                         STORYT_ASSERT(!entries.contains(nbt.nid.getNIDType()), "Duplicate NID Type found in NBT");
                         entries[nbt.nid.getNIDType()] = nbt;
                     }
@@ -367,19 +401,19 @@ namespace reader::ndb {
             {
                 for (const auto& entry : rgentries)
                 {
-                    const EntryType e = entry.as<EntryType>();
+                    //const EntryType e = entry.as<EntryType>();
                     if constexpr (std::is_same_v<EntryIDType, core::NID>)
                     {
-                        if (e.nid == id)
+                        if (entry.getCachedNBTNID() == id)
                         {
-                            return e;
+                            return entry.asNBTEntry();
                         }
                     }
                     else
                     {
-                        if (e.bref.bid == id)
+                        if (entry.getCachedBBTBID() == id)
                         {
-                            return e;
+                            return entry.asBBTEntry();
                         }
                     }
                 }
@@ -388,8 +422,9 @@ namespace reader::ndb {
             {
                 for (size_t i = 0; i < rgentries.size(); ++i)
                 {
-                    const BTEntry bt = rgentries.at(i).as<BTEntry>();
-                    if (id > bt.btkey || id == bt.btkey)
+                    //const BTEntry bt = rgentries.at(i).as<BTEntry>();
+                    uint64_t btkey = rgentries.at(i).getCachedBTKey();
+                    if (id > btkey || id == btkey)
                     {
                         std::optional<EntryType> ret = subPages.at(i).get<EntryType>(id);
                         if (ret.has_value())
