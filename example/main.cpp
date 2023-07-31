@@ -1,5 +1,6 @@
+#include <vector>
 #include <iostream>
-#include "reader.h"
+#include "pst_reader.h"
 
 int main()
 {
@@ -23,17 +24,5 @@ int main()
             std::vector<std::string> recipients = msg.getRecipients();
         }
     }
-
-    //std::vector<reader::MessageObject> messages = folder->getNMessages(0, 50);
-    //for (auto& msg : messages)
-    //{
-    //    STORYT_INFO("Subject: {}\nFrom: {}\nHas Attachments: {}\n", msg.getSubject(), msg.getSender(), msg.hasAttachments());
-
-    //    for (auto& recip : msg.getRecipients())
-    //    {
-    //        std::cout << recip << "\n";
-    //    }
-    //    std::cout << "\n";
-    //}
     return 0;
 }
