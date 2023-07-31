@@ -6,18 +6,19 @@
 #include <format>
 #include <array>
 #include <stdexcept>
+#include <span>
 
 // NOLINTBEGIN
 
 #if STORYT_BUILD_SPDLOG_ == true
     #include <spdlog/spdlog.h>
-    #define STORYT_TRACE(...) spdlog::trace(__VA_ARGS__)
-    #define STORYT_INFO(...) spdlog::info(__VA_ARGS__)
-    #define STORYT_WARN(...) spdlog::warn(__VA_ARGS__)
+    #define STORYT_TRACE(...) //spdlog::trace(__VA_ARGS__)
+    #define STORYT_INFO(...) //spdlog::info(__VA_ARGS__)
+    #define STORYT_WARN(...) //spdlog::warn(__VA_ARGS__)
     #define STORYT_ERROR(...) spdlog::error(__VA_ARGS__)
     #define STORTY_CRITICAL(...) spdlog::critical(__VA_ARGS__)
     
-    #define STORYT_WARNIF(cond, ...) if(cond) spdlog::warn(__VA_ARGS__)
+    #define STORYT_WARNIF(cond, ...) //if(cond) spdlog::warn(__VA_ARGS__)
     #define STORYT_ERRORIF(cond, ...) if(cond) spdlog::error(__VA_ARGS__)
 #else
     #define STORYT_TRACE(...)
@@ -537,6 +538,81 @@ namespace reader::utils {
         }
     }
 
+    const char* PidTagTypeChar(uint32_t id)
+    {
+        switch (id)
+        {                                                          
+        case 0x0FF9: return "types::PidTagType::RecordKey;                          ";
+        case 0x3001: return "types::PidTagType::DisplayName;                        ";
+        case 0x35E0: return "types::PidTagType::IpmSubTreeEntryId;                  ";
+        case 0x35E3: return "types::PidTagType::IpmWastebasketEntryId;              ";
+        case 0x35E7: return "types::PidTagType::FinderEntryId;                      ";
+        case 0x3602: return "types::PidTagType::ContentCount;                       ";
+        case 0x3603: return "types::PidTagType::ContentUnreadCount;                 ";
+        case 0x360A: return "types::PidTagType::Subfolders;                         ";
+        case 0x0001: return "types::PidTagType::NameidBucketCount;                  ";
+        case 0x0002: return "types::PidTagType::NameidStreamGuid;                   ";
+        case 0x0003: return "types::PidTagType::NameidStreamEntry;                  ";
+        case 0x0004: return "types::PidTagType::NameidStreamString;                 ";
+        case 0x1000: return "types::PidTagType::NameidBucketBase;                   ";
+        case 0x1097: return "types::PidTagType::ItemTemporaryFlags;                 ";
+        case 0x661D: return "types::PidTagType::PstBestBodyProptag;                 ";
+        case 0x6635: return "types::PidTagType::PstHiddenCount;                     ";
+        case 0x6636: return "types::PidTagType::PstHiddenUnread;                    ";
+        case 0x6705: return "types::PidTagType::PstIpmsubTreeDescendant;            ";
+        case 0x6772: return "types::PidTagType::PstSubTreeContainer;                ";
+        case 0x67F1: return "types::PidTagType::LtpParentNid;                       ";
+        case 0x67F2: return "types::PidTagType::LtpRowId;                           ";
+        case 0x67F3: return "types::PidTagType::LtpRowVer;                          ";
+        case 0x67FF: return "types::PidTagType::PstPassword;                        ";
+        case 0x682F: return "types::PidTagType::MapiFormComposeCommand;             ";
+        case 0x0E30: return "types::PidTagType::ReplItemid;                         ";
+        case 0x0E33: return "types::PidTagType::ReplChangenum;                      ";
+        case 0x0E34: return "types::PidTagType::ReplVersionHistory;                 ";
+        case 0x0E38: return "types::PidTagType::ReplFlags;                          ";
+        case 0x3613: return "types::PidTagType::ContainerClass;                     ";
+        case 0x0017: return "types::PidTagType::Importance;                         ";
+        case 0x001A: return "types::PidTagType::MessageClassW;                      ";
+        case 0x0036: return "types::PidTagType::Sensitivity;                        ";
+        case 0x0037: return "types::PidTagType::SubjectW;                           ";
+        case 0x0039: return "types::PidTagType::ClientSubmitTime;                   ";
+        case 0x0042: return "types::PidTagType::SentRepresentingNameW;              ";
+        case 0x0057: return "types::PidTagType::MessageToMe;                        ";
+        case 0x0058: return "types::PidTagType::MessageCcMe;                        ";
+        case 0x0070: return "types::PidTagType::ConversationTopicW;                 ";
+        case 0x0071: return "types::PidTagType::ConversationIndex;                  ";
+        case 0x0E03: return "types::PidTagType::DisplayCcW;                         ";
+        case 0x0E04: return "types::PidTagType::DisplayToW;                         ";
+        case 0x0E06: return "types::PidTagType::MessageDeliveryTime;                ";
+        case 0x0E07: return "types::PidTagType::MessageFlags;                       ";
+        case 0x0E08: return "types::PidTagType::MessageSize;                        ";
+        case 0x0E17: return "types::PidTagType::MessageStatus;                      ";
+        case 0x0E3C: return "types::PidTagType::ReplCopiedfromVersionhistory;       ";
+        case 0x0E3D: return "types::PidTagType::ReplCopiedfromItemid;               ";
+        case 0x3007: return "types::PidTagType::CreationTime;                       ";
+        case 0x3008: return "types::PidTagType::LastModificationTime;               ";
+        case 0x300b: return "types::PidTagType::SearchKey;                          ";
+        case 0x0c15: return "types::PidTagType::RecipientType;                      ";
+        case 0x0E0F: return "types::PidTagType::Responsibility;                     ";
+        case 0x0FFE: return "types::PidTagType::ObjectType;                         ";
+        case 0x0FFF: return "types::PidTagType::EntryId;                            ";
+        case 0x3002: return "types::PidTagType::AddressType;                        ";
+        case 0x3003: return "types::PidTagType::EmailAddress;                       ";
+        case 0x3900: return "types::PidTagType::DisplayType;                        ";
+        case 0x39FF: return "types::PidTagType::SevenBitDisplayName;                ";
+        case 0x3A40: return "types::PidTagType::SendRichInfo;                       ";
+        case 0x0E20: return "types::PidTagType::AttachSize;                         ";
+        case 0x3705: return "types::PidTagType::AttachMethod;                       ";
+        case 0x370E: return "types::PidTagType::AttachMimeTag;                      ";
+        case 0x3704: return "types::PidTagType::AttachFileName;                     ";
+        case 0x370B: return "types::PidTagType::RenderingPosition;                  ";
+        case 0x3701: return "types::PidTagType::AttachDataBinaryOrDataObject;       ";
+        case 0x3702: return "types::PidTagType::AttachEncoding;                     ";
+        default:
+            return "types::PidTagType::Unknown";
+        }
+    }
+
     std::vector<types::byte_t> pad(const std::vector<types::byte_t>& bytes, size_t bytesToAdd)
     {
         std::vector<types::byte_t> result = bytes;
@@ -674,13 +750,12 @@ namespace reader::utils {
         return res;
     }
 
-
     class ByteView
     {
     public:
-        explicit ByteView(const std::vector<types::byte_t>& bytes)
+        ByteView(const std::vector<types::byte_t>& bytes)
             : m_bytes(bytes) {}
-        explicit ByteView(const std::vector<types::byte_t>& bytes, size_t start)
+        ByteView(const std::vector<types::byte_t>& bytes, size_t start)
             : m_bytes(bytes), m_start(start) 
         {
             STORYT_ASSERT((start < bytes.size()), "Start [{}] must <= bytes.size() [{}]", start, bytes.size());
@@ -715,7 +790,7 @@ namespace reader::utils {
         template<typename PrimitiveType>
         PrimitiveType read(size_t size)
         {
-            STORYT_ASSERT((sizeof(PrimitiveType) == size), "PrimitiveType Size [{}] != Size [{}]", sizeof(PrimitiveType), size);
+            //STORYT_ASSERT((sizeof(PrimitiveType) == size), "PrimitiveType Size [{}] != Size [{}]", sizeof(PrimitiveType), size);
             const size_t start = m_start;
             m_start += size;
             return slice(m_bytes, start, start + size, size, toT_l<PrimitiveType>);
@@ -852,8 +927,6 @@ namespace reader::utils {
         std::vector<uint8_t> characters = view.read<uint8_t>(bytes.size() / 2U, 1U, 1U);
         return std::string(characters.begin(), characters.end());
     }
-
-
 
     /*
     *

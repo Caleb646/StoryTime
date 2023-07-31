@@ -6,6 +6,7 @@
 #include <utility>
 #include <algorithm>
 #include <unordered_map>
+#include <numeric>
 
 #include "types.h"
 #include "utils.h"
@@ -33,6 +34,10 @@ namespace reader {
 				STORYT_ASSERT((utils::getNIDType(getHIDType()) == types::NIDType::HID),
 					"Invalid HID Type");
 			}
+			[[nodiscard]] bool IsHIDValid() const
+			{
+				return utils::getNIDType(getHIDType()) == types::NIDType::HID && getHIDAllocIndex() != 0;
+			}
 			/// @brief (5 bits) MUST be set to 0 (NID_TYPE_HID) to indicate a valid HID.
 			[[nodiscard]] uint32_t getHIDType() const
 			{ 
@@ -43,7 +48,7 @@ namespace reader {
 			[[nodiscard]] uint32_t getHIDAllocIndex() const
 			{ 
 				const uint32_t index = (m_hid >> 5U) & 0x7FFU;
-				STORYT_ASSERT((index != 0), "Invalid HID Index");
+				STORYT_ERRORIF((index == 0), "HID Allocation Index can NOT be 0");
 				return index;
 			}
 			/// @brief (16 bits) This is the zero-based data block index. 
@@ -589,13 +594,18 @@ namespace reader {
 			[[nodiscard]] const HNBlock& at(size_t blockIdx) const { return m_blocks.at(blockIdx); }
 			[[nodiscard]] std::vector<types::byte_t> getAllocation(const HID& hid) const
 			{
-				const size_t blockIdx = hid.getHIDBlockIndex();
-				const size_t pageIdx = hid.getHIDAllocIndex();
-				const HNBlock& block = at(blockIdx);
-				const size_t start = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx - 1));
-				const size_t end = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx));
-				const size_t size = end - start;
-				return utils::slice(block.data, start, end, size);
+				if (hid.IsHIDValid())
+				{
+					const size_t blockIdx = hid.getHIDBlockIndex();
+					const size_t pageIdx = hid.getHIDAllocIndex();
+					const HNBlock& block = at(blockIdx);
+					const size_t start = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx - 1));
+					const size_t end = static_cast<size_t>(block.map.rgibAlloc.at(pageIdx));
+					const size_t size = end - start;
+					return utils::slice(block.data, start, end, size);
+				}
+				STORYT_ERROR("Failed to get HN Allocation because HID [{}] was NOT valid", hid.getHIDRaw());
+				return {};
 			}
 
 			[[nodiscard]] size_t nblocks() const { return m_blocks.size(); }
@@ -902,7 +912,7 @@ namespace reader {
 			{
 				STORYT_ASSERT(!info.isMv, "Property is not a PTBinary");
 				STORYT_ASSERT(!info.isFixed, "Property is not a PTBinary");
-				STORYT_ASSERT(std::cmp_equal(info.singleEntrySize, 0ULL), "Property is not a PTBinary");
+				STORYT_ASSERT(info.singleEntrySize == 0ULL, "Property is not a PTBinary");
 				PTBinary bin{};
 				bin.id = id;
 				bin.data = data;
@@ -911,11 +921,18 @@ namespace reader {
 
 			[[nodiscard]] PTString asPTString() const
 			{
-				STORYT_ASSERT(!info.isMv, "Property is not a PTString");
-				STORYT_ASSERT(!info.isFixed, "Property is not a PTString");
-				STORYT_ASSERT((info.singleEntrySize == 2ULL), "Property is not a PTString");
-				STORYT_ASSERT((data.size() % 2ULL == 0ULL), "Property is not a PTString");
-				STORYT_ASSERT((data.size() != 0ULL), "Property is not a PTString");
+				const char* upid = utils::PidTagTypeChar(id);
+				const char* uptype = utils::PropertyTypeChar(propType);
+				STORYT_ASSERT(!info.isMv, 
+					"Property is not a PTString with PID [{}] and PropType [{}] because it is marked as Multivalued", upid, uptype);
+				STORYT_ASSERT(!info.isFixed, 
+					"Property is not a PTString with PID [{}] and PropType [{}] because it is marked as Fixed", upid, uptype);
+				STORYT_ASSERT((info.singleEntrySize == 2ULL), 
+					"Property is not a PTString with PID [{}] and PropType [{}] because entry size [{}] != [2]", upid, uptype, info.singleEntrySize);
+				STORYT_ASSERT((data.size() % 2ULL == 0ULL), 
+					"Property is not a PTString with PID [{}] and PropType [{}] because data.size() % 2 != 0 but [{}]", upid, uptype, (data.size() % 2ULL));
+				STORYT_ASSERT((data.size() != 0ULL), 
+					"Property is not a PTString with PID [{}] and PropType [{}] because data.size() == 0", upid, uptype);
 				PTString str{};
 				str.id = id;
 				str.data = utils::UTF16BytesToString(data);

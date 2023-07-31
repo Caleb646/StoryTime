@@ -245,7 +245,7 @@ namespace reader
 				}
 				return emailAddresses;
 			}
-			STORYT_ASSERT(false, "Failed to getRecipients for Message with NID [{}]", m_nid.getNIDRaw());
+			STORYT_ERROR("Failed to getRecipients for Message with NID [{}]", m_nid.getNIDRaw());
 			return emailAddresses;
 		}
 
@@ -276,7 +276,7 @@ namespace reader
 					return prop->asPTString().data;
 				}
 			}
-			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}]", m_nid.getNIDRaw());
+			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}] and Subject of [{}]", m_nid.getNIDRaw(), getSubject());
 			return {};
 		}
 
@@ -310,7 +310,7 @@ namespace reader
 					return m_pc->TryToGetProperty(info);
 				}
 			}
-			STORYT_ASSERT(false, "Failed to getBody for Message with NID [{}]", m_nid.getNIDRaw());
+			STORYT_ERROR("Failed to TryToGetProperty_ for Message with NID [{}]", m_nid.getNIDRaw());
 			return nullptr;
 		}
 
@@ -385,7 +385,8 @@ namespace reader
 			}
 			else
 			{
-				STORYT_ASSERT(false, "m_recip is NOT setup for Message with NID [{}]", m_recip);
+				//STORYT_ASSERT(false, "m_recip is NOT setup for Message with NID [{}]", m_nid.getNIDRaw());
+				STORYT_ERROR("m_recip is NOT setup for Message with NID [{}]", m_nid.getNIDRaw());
 			}	
 		}
 
@@ -415,7 +416,7 @@ namespace reader
 		static Folder Init(core::NID nid, core::Ref<const ndb::NDB> ndb)
 		{
 			std::unordered_map<types::NIDType, ndb::NBTEntry> nbtentries = ndb->all(nid);
-			STORYT_ASSERT((nbtentries.size() == 4), "A Folder must be composed of 4 Parts");
+			STORYT_ASSERT((nbtentries.size() >= 4), "A Folder must be composed of at least 4 Parts");
 			STORYT_ASSERT(nbtentries.contains(types::NIDType::NORMAL_FOLDER), "A Folder must have a NORMAL_FOLDER");
 			STORYT_ASSERT(nbtentries.contains(types::NIDType::HIERARCHY_TABLE), "A Folder must have a HIERARCHY_TABLE");
 			STORYT_ASSERT(nbtentries.contains(types::NIDType::CONTENTS_TABLE), "A Folder must have a CONTENTS_TABLE");

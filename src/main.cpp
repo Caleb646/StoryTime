@@ -3,22 +3,37 @@
 
 int main()
 {
-    reader::PSTReader reader("C:\\Users\\caleb\\Coding_Projects\\CPP Projects\\PST File Reader\\data\\Test.pst");
-    //reader::PSTReader reader("C:\\Users\\caleb\\Documents\\Outlook Files\\Outlook.pst");
+    //reader::PSTReader reader("C:\\Users\\caleb\\Coding_Projects\\CPP Projects\\PST File Reader\\data\\Test.pst");
+    reader::PSTReader reader("C:\\Users\\caleb\\Documents\\Outlook Files\\Outlook.pst");
     reader.read();
 
     reader::Folder* folder = reader.getFolder(std::string("Inbox"));
-    std::vector<reader::MessageObject> messages = folder->getNMessages(0, 50);
+    
+    std::cout << folder->nMessages() << "\n";
 
-    for (auto& msg : messages)
+    const size_t batchSize = 50;
+    for (size_t i = 0; i < folder->nMessages(); i+=50)
     {
-        STORYT_INFO("Subject: {}\nFrom: {}\nHas Attachments: {}\n", msg.getSubject(), msg.getSender(), msg.hasAttachments());
-
-        for (auto& recip : msg.getRecipients())
+        std::vector<reader::MessageObject> messages = folder->getNMessages(i, i+batchSize);
+        for (auto& msg : messages)
         {
-            std::cout << recip << "\n";
+            std::string subject = msg.getSubject();
+            std::string sender = msg.getSender();
+            std::string body = msg.getBody();
+            std::vector<std::string> recipients = msg.getRecipients();
         }
-        std::cout << "\n";
     }
+
+    //std::vector<reader::MessageObject> messages = folder->getNMessages(0, 50);
+    //for (auto& msg : messages)
+    //{
+    //    STORYT_INFO("Subject: {}\nFrom: {}\nHas Attachments: {}\n", msg.getSubject(), msg.getSender(), msg.hasAttachments());
+
+    //    for (auto& recip : msg.getRecipients())
+    //    {
+    //        std::cout << recip << "\n";
+    //    }
+    //    std::cout << "\n";
+    //}
     return 0;
 }
