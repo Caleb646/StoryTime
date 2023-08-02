@@ -7,8 +7,9 @@
 #include <algorithm>
 #include <type_traits>
 
-#include "types.h"
-#include "utils.h"
+#include "storyt/common.h"
+#include "storyt/pst/types.h"
+#include "storyt/pst/utils.h"
 
 #ifndef STORYT_CORE_H
 #define STORYT_CORE_H

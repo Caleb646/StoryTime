@@ -8,43 +8,11 @@
 #include <stdexcept>
 #include <span>
 
-// NOLINTBEGIN
+#ifndef STORYT_PST_UTILS_H
+#define STORYT_PST_UTILS_H
 
-#if STORYT_BUILD_SPDLOG_ == true
-    #include <spdlog/spdlog.h>
-    #define STORYT_TRACE(...) //spdlog::trace(__VA_ARGS__)
-    #define STORYT_INFO(...) //spdlog::info(__VA_ARGS__)
-    #define STORYT_WARN(...) //spdlog::warn(__VA_ARGS__)
-    #define STORYT_ERROR(...) spdlog::error(__VA_ARGS__)
-    #define STORTY_CRITICAL(...) spdlog::critical(__VA_ARGS__)
-    
-    #define STORYT_WARNIF(cond, ...) //if(cond) spdlog::warn(__VA_ARGS__)
-    #define STORYT_ERRORIF(cond, ...) if(cond) spdlog::error(__VA_ARGS__)
-#else
-    #define STORYT_TRACE(...)
-    #define STORYT_INFO(...)
-    #define STORYT_WARN(...)
-    #define STORYT_ERROR(...)
-    #define STORTY_CRITICAL(...)
-
-    #define STORYT_WARNIF(cond, ...)
-    #define STORYT_ERRORIF(cond, ...)
-#endif
-
-#ifdef NDEBUG
-    #define STORYT_ASSERT(cond, ...) STORYT_ERRORIF(!cond, __VA_ARGS__)
-#else
-    #define STORYT_ASSERT(cond, ...) assert(cond)
-#endif
-
-#define STORYT_VERIFY(cond, ...) if(!cond) throw std::runtime_error("")
-
-#ifndef STORYT_UTILS_H
-#define STORYT_UTILS_H
-
-// NOLINTEND
-
-#include "types.h"
+#include "storyt/common.h"
+#include "storyt/pst/types.h"
 
 namespace storyt::utils {
 
@@ -1500,6 +1468,6 @@ namespace storyt::utils {
     } // namespace ms
 
     // NOLINTEND
-} // namespace reader::utils
+} // namespace storyt::utils
 
-#endif // !READER_UTILS_H
+#endif // !STORYT_PST_UTILS_H

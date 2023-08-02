@@ -10,9 +10,10 @@
 #include <array>
 #include <optional>
 
-#include "types.h"
-#include "utils.h"
-#include "core.h"
+#include "storyt/common.h"
+#include "storyt/pst/types.h"
+#include "storyt/pst/utils.h"
+#include "storyt/pst/core.h"
 
 #ifndef STORYT_NDB_H
 #define STORYT_NDB_H

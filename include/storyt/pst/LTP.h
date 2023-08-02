@@ -8,10 +8,11 @@
 #include <unordered_map>
 #include <numeric>
 
-#include "types.h"
-#include "utils.h"
-#include "core.h"
-#include "NDB.h"
+#include "storyt/common.h"
+#include "storyt/pst/types.h"
+#include "storyt/pst/utils.h"
+#include "storyt/pst/core.h"
+#include "storyt/pst/NDB.h"
 
 #ifndef STORYT_LTP_H
 #define STORYT_LTP_H

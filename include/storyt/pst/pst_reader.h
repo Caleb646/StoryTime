@@ -5,17 +5,16 @@
 #include <vector>
 #include <optional>
 
-#include "utils.h"
-#include "types.h"
-#include "core.h"
-#include "NDB.h"
-#include "LTP.h"
-#include "Messaging.h"
+#include "storyt/common.h"
+#include "storyt/pst/utils.h"
+#include "storyt/pst/types.h"
+#include "storyt/pst/core.h"
+#include "storyt/pst/NDB.h"
+#include "storyt/pst/LTP.h"
+#include "storyt/pst/Messaging.h"
 
 #ifndef STORYT_PST_READER_H
 #define STORYT_PST_READER_H
-
-
 
 namespace storyt
 {

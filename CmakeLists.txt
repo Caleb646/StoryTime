@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.27.1)
 project(storyt VERSION 0.1.0)
 
 include(cmake/storytCompilerWarnings.cmake)
@@ -11,6 +11,7 @@ include(GNUInstallDirs)
 # CMake package containing the macros parsing versions is included.
 # ---------------------------------------------------------------------------------------
 include(CMakePackageConfigHelpers)
+include(FetchContent)
 
 
 set(CMAKE_CXX_STANDARD 20)
@@ -20,9 +21,10 @@ set(STORYT_BUILD_SPDLOG true)
 # ---------------------------------------------------------------------------------------
 # Set default build to release
 # ---------------------------------------------------------------------------------------
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
-endif()
+#if(NOT CMAKE_BUILD_TYPE)
+#   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
+#endif()
+#-----
 
 # ---------------------------------------------------------------------------------------
 # Set STORYT_MASTER_PROJECT to ON if we are building spdlog
@@ -50,14 +52,46 @@ if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR STORYT_BUILD_TEST) AND BUILD_TES
     set(STORYT_BUILD_SPDLOG false)
 endif()
 
-#include(CMakePrintHelpers)
-#cmake_print_variables(STORYT_SHOULD_BUILD_SPDLOG)
 
+# ---------------------------------------------------------------------------------------
+# Source: https://github.com/madler/zlib/issues/759
+# Zlib has a bunch of examples that will be built without using this macro
+# ---------------------------------------------------------------------------------------
+macro(FetchContent_MakeAvailableExcludeFromAll)
+    foreach(contentName IN ITEMS ${ARGV})
+        string(TOLOWER ${contentName} contentNameLower)
+        FetchContent_GetProperties(${contentName})
+        if(NOT ${contentNameLower}_POPULATED)
+            FetchContent_Populate(${contentName})
+            if(EXISTS ${${contentNameLower}_SOURCE_DIR}/CMakeLists.txt)
+                add_subdirectory(${${contentNameLower}_SOURCE_DIR}
+                    ${${contentNameLower}_BINARY_DIR} EXCLUDE_FROM_ALL)
+                    # ---------------------------------------------------------------------------------------
+                    # EXCLUDE_FROM_ALL keeps the examples from being built
+                    # ---------------------------------------------------------------------------------------
+            endif()
+        endif()
+    endforeach()
+endmacro()
+
+
+FetchContent_Declare(
+    zlib
+    URL https://www.zlib.net/zlib-1.2.13.tar.gz
+        https://www.zlib.net/fossils/zlib-1.2.13.tar.gz
+        https://github.com/madler/zlib/releases/download/v1.2.13/zlib-1.2.13.tar.gz
+)
+FetchContent_MakeAvailableExcludeFromAll(zlib)
+# ---------------------------------------------------------------------------------------
+# Add zlib include directories
+# ---------------------------------------------------------------------------------------
+target_include_directories(zlibstatic INTERFACE ${zlib_BINARY_DIR} ${zlib_SOURCE_DIR})
 
 # ---------------------------------------------------------------------------------------
 # The keyword INTERFACE makes the target a header-only library that does not need to be compiled.
 # ---------------------------------------------------------------------------------------
 add_library(storyt INTERFACE)
+add_library(storyt::storyt ALIAS storyt)
 # ---------------------------------------------------------------------------------------
 # $<BUILD_INTERFACE:SI_SOURCE_DIR}/include> tells CMake that if the library is used directly by another 
 # CMake target (such as when building tests for the library or when it is included as a subdirectory), 
@@ -71,98 +105,29 @@ target_include_directories(
   INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+target_link_libraries(storyt INTERFACE zlibstatic)
 # ---------------------------------------------------------------------------------------
 # Specifies compiler features to be enabled in a compiler-agnostic way.
 # ---------------------------------------------------------------------------------------
 target_compile_features(storyt INTERFACE cxx_std_20)
 
 
-if(STORYT_INSTALL)
-    # ---------------------------------------------------------------------------------------
-    # The folders for the installation artifacts are set. The folder names are relative 
-    # to what the user defines in the CMAKE_INSTALL_PREFIX variable.
-    #
-    # The target paths are provided by GNUInstallDirs
-    # ---------------------------------------------------------------------------------------
-    install(
-        TARGETS storyt
-        EXPORT ${PROJECT_NAME}_Targets # The EXPORT associates the installation with an export-form named ${PROJECT_NAME}_Targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} # All files that are neither executables, shared libraries (.so), header files.
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # All shared libraries (.so/.dll) files, typically all binaries produced by a call to
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # All executables built by an add_excutable call
-      # INCLUDE - All public header files, which is omitted here because the INSTALL_INTERFACE already specifies this.
-    ) 
-    # ---------------------------------------------------------------------------------------
-    # Then the macro write_basic_package_version_file is called and instructed to create a file storytConfigVersion.cmake .
-    # The version specified is the one supplied in the project directive at the beginning of the file.
-    # ---------------------------------------------------------------------------------------
-    write_basic_package_version_file(
-        "${PROJECT_NAME}ConfigVersion.cmake"
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY SameMajorVersion
-    )
-    # ---------------------------------------------------------------------------------------
-    # CMake macro configure_package_config_file is called, to generate the configuration file which CMake uses for using an installed package.
-    # The version specified is the one supplied in the project directive at the beginning of the file.
-    #
-    # By specifying INSTALL_DESTINATION CMake is told where to place it when creating the installation artifact.
-    # The exact path is provided by GNUInstallDirs
-    # ---------------------------------------------------------------------------------------
-    configure_package_config_file(
-        # All the placeholders marked with @ in the ${PROJECT_NAME}Config.cmake.in file 
-        # are replaced with the explicit values and the file is written to the target .
-        "${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
-        "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-        INSTALL_DESTINATION
-        ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
-    )
-    # ---------------------------------------------------------------------------------------
-    # The file containing the installation targets as defined above is created and copied to the installation folder. 
-    # The EXPORT keyword at the beginning tells CMake to export the installation targets which are defined in the file 
-    # storytTargets.cmake which is created in the build folder when building the project to the DESTINATION specified. 
-    # All targets are to be placed in the NAMESPACE story::
-    # ---------------------------------------------------------------------------------------
-    install(
-        EXPORT ${PROJECT_NAME}_Targets
-        FILE ${PROJECT_NAME}Targets.cmake
-        NAMESPACE ${PROJECT_NAME}::
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
-    )
-    # ---------------------------------------------------------------------------------------
-    # The created .cmake files containing the build configuration and information about version compatibility are to 
-    # be installed to the install folder as well. By providing the FILES keyword a list of files is given to be saved 
-    # in a folder specified by DESTINATION.
-    # ---------------------------------------------------------------------------------------
-    install(
-        FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-              "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/cmake
-    )
-    # ---------------------------------------------------------------------------------------
-    # The header files are copied to the installation folder. For header-only libraries usually, 
-    # all header files are supplied, so instead of providing individual files, the whole include 
-    # directory is copied using the DIRECTORY keyword.
-    # ---------------------------------------------------------------------------------------
-    install(DIRECTORY ${PROJECT_SOURCE_DIR}/include DESTINATION include)
-endif()
-
 if(STORYT_MASTER_PROJECT)
     project(storyt_example)
     add_executable(storyt_example "example/main.cpp")
     target_compile_options(storyt_example PUBLIC ${STORYT_CLANG_WARNINGS})
-    target_include_directories(storyt_example PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(storyt_example PRIVATE storyt::storyt)
+
     if(STORYT_BUILD_SPDLOG)
         # ---------------------------------------------------------------------------------------
         # If building with SPDLog then fetch and install it.
         # ---------------------------------------------------------------------------------------
-        include(FetchContent)
         FetchContent_Declare(
           spdlog
           GIT_REPOSITORY https://github.com/gabime/spdlog.git
           GIT_TAG v1.12.0
         )
         FetchContent_MakeAvailable(spdlog)
-
         target_link_libraries(storyt_example PRIVATE spdlog::spdlog)
         add_compile_definitions(STORYT_BUILD_SPDLOG_=true)
     endif()

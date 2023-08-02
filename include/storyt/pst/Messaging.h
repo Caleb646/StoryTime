@@ -9,11 +9,12 @@
 #include <optional>
 #include <regex>
 
-#include "types.h"
-#include "utils.h"
-#include "core.h"
-#include "NDB.h"
-#include "LTP.h"
+#include "storyt/common.h"
+#include "storyt/pst/types.h"
+#include "storyt/pst/utils.h"
+#include "storyt/pst/core.h"
+#include "storyt/pst/NDB.h"
+#include "storyt/pst/LTP.h"
 
 #ifndef STORYT_MESSAGING_H
 #define STORYT_MESSAGING_H
