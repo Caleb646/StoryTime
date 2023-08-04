@@ -39,6 +39,7 @@
 namespace storyt::_internal
 {
 	using byte_t = uint8_t;
+	using state_t = uint16_t;
 
 	class File
 	{

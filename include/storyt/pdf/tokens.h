@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstring>
 #include <span>
+#include <functional>
+#include <optional>
 
 #include <storyt/common.h>
 
@@ -55,131 +57,196 @@ namespace storyt::_internal
 	* 
 	*/
 
-	enum WildChar : byte_t
+	enum State : state_t
 	{
-		MATCHANY = 0xFF,
-		DONE = 0xFE
+		MATCHANY = 0xFFFF,
+		FOUND = 0xFFFE,
+		FAILED = 0xFFFD,
+		CONTINUE = 0xFFFC,
+		START = 0xFFFA
 	};
 
-	enum class Result
+	template<typename T>
+	struct ParseResult
 	{
-		FAILED,
-		NOTFOUND,
-		FOUND
+		State state;
+		T transition;
+
+		[[nodiscard]] bool didFail() const
+		{
+			return state == FAILED;
+		}
 	};
 
 	struct Transition
 	{
-		byte_t current;
-		byte_t incoming;
-		byte_t next;
-		byte_t on(byte_t incoming_)
+		using NextType = Transition*;
+		using ResultType = ParseResult<NextType>;
+		using onFuncBaseType = std::function<ResultType(state_t)>;
+		using onFuncType = std::optional<std::function<ResultType(state_t)>>;
+		state_t current;
+		state_t incoming;
+		NextType next;
+		onFuncType onFunc;
+		Transition(state_t curr, state_t inc, NextType n)
+			: current(curr), incoming(inc), next(n), onFunc(std::nullopt) {}
+		Transition(state_t curr, state_t inc, onFuncType of)
+			: current(curr), incoming(inc), next(nullptr), onFunc(std::move(of)) {}
+		Transition(state_t curr, state_t inc)
+			: current(curr), incoming(inc), next(nullptr), onFunc(std::nullopt) {}
+		ResultType on(state_t transitionByte)
 		{
-			if (incoming == incoming_)
+			STORYT_ASSERT((onFunc.has_value() || nextIsValid()),
+				"Transition with current [{}] incoming [{}] does NOT have an onFunc or next value", current, incoming);
+			if (onFunc.has_value())
 			{
-				return next;
+				return onFunc.value()(transitionByte);
 			}
-			return current;
+			else if (incoming == transitionByte && nextIsValid())
+			{
+				return { CONTINUE, next };
+			}
+			return { FAILED, nullptr };
 		}
-	};
-
-	class ObjToken
-	{
-	public:
-		static constexpr byte_t firstCharacter{'o'};
-	public:
-		explicit ObjToken(std::span<byte_t> span)
+		[[nodiscard]] bool nextIsValid() const
 		{
-			m_storedChars.reserve(2048);
-			for (byte_t byte : span)
-			{
-				if (match(byte))
-				{
-					return;
-				}
-			}
+			return next != nullptr;
 		}
-		bool match(byte_t byte)
+		void setOnFunc(onFuncBaseType&& func)
 		{
-			m_storedChars.push_back(byte);
-			if (getCurrentState() == MATCHANY)
-			{
-				/// If true objend has been found but its possible 
-				/// that this is just a random e
-				if (byte == 'e')
+			onFunc = std::move(func);
+		}
+		static Transition createDoneTransition(state_t current, state_t incoming)
+		{
+			return Transition(current, incoming, [incoming](state_t inc) {
+				if (incoming == inc)
 				{
-					++m_currentStateIdx;
-				}
-			}
-			else if (getCurrentState() == byte)
-			{
-				return ++m_currentStateIdx == sizeof(m_states);
-			}
-			else
-			{
-				/// If past the MATCHANY token then its possible that
-				/// a random e was hit that triggered the state transition to e .
-				/// So reset the state back to the MATCHANY Token and try again.
-				if (m_currentStateIdx > 4)
-				{
-					m_currentStateIdx = 4;
+					return ResultType{ FOUND, nullptr };
 				}
 				else
 				{
-					reset();
+					return ResultType{ FAILED, nullptr };
 				}
+			});
+		}
+		static Transition createTransitionToMatchAny(state_t current, Transition* matchAny)
+		{
+			STORYT_ASSERT((matchAny != nullptr), "Cannot create Transtion to MatchAny with a nullptr");
+			return Transition(current, MATCHANY, [matchAny](state_t) { return ResultType{ CONTINUE, matchAny }; });
+		}
+
+		static Transition createFailBackToTransition(
+			state_t current, state_t incoming, Transition* successfulTo, Transition* failBackTo, State successfulMatch = CONTINUE)
+		{
+			STORYT_ASSERT((failBackTo != nullptr), "Cannot create Transtion to MatchAny with a nullptr");
+			return Transition(current, incoming, 
+				[successfulMatch, incoming, successfulTo, failBackTo](state_t inc)
+				{
+					if (incoming == inc)
+					{
+						return ResultType{ successfulMatch, successfulTo };
+					}
+					return ResultType{ CONTINUE, failBackTo };
+				});
+		}
+	};
+
+	template<typename PDFObjectType>
+	int parse(std::span<const byte_t> span, Transition* starting)
+	{
+		STORYT_ASSERT((span.size() > 0 && span[0] == PDFObjectType::firstCharacter),
+			"match was passed an invalid span");
+		int bytesParsed{ 0 };
+		for (byte_t byte : span)
+		{
+			++bytesParsed;
+			auto result = starting->on(byte);
+			if (result.didFail())
+			{
+				STORYT_ASSERT(false, "Parsing failed");
+				return -1;
 			}
-			return false;
+			else if (result.state == FOUND)
+			{
+				return bytesParsed;
+			}
+			starting = result.transition;
 		}
-		void reset()
+		STORYT_ASSERT(false, "Parsing failed");
+		return -1;
+	}
+
+	struct ObjToken
+	{
+		static constexpr byte_t firstCharacter{'o'};
+		std::span<const byte_t> storedBytes;
+		int bytesParsed{ 0 };
+
+		explicit ObjToken(std::span<const byte_t> span)
 		{
-			m_storedChars.clear();
-			m_currentStateIdx = 0;
+			Transition matchAny = { MATCHANY, 'e' };
+			Transition JJ = Transition::createFailBackToTransition('j', CRETURN, nullptr, &matchAny, FOUND);
+			Transition BB = Transition::createFailBackToTransition('b', 'j', &JJ, &matchAny);
+			Transition OO = Transition::createFailBackToTransition('o', 'b', &BB, &matchAny);
+			Transition DD = Transition::createFailBackToTransition('d', 'o', &OO, &matchAny);
+			Transition NN = Transition::createFailBackToTransition('n', 'd', &DD, &matchAny);
+			Transition EE = Transition::createFailBackToTransition('e', 'n', &NN, &matchAny);
+			matchAny.setOnFunc([&matchAny, &EE](state_t incoming) {
+					if (incoming == 'e')
+					{
+						return Transition::ResultType{ CONTINUE, &EE};
+					}
+					else
+					{
+						return Transition::ResultType{ CONTINUE, &matchAny};
+					}
+				});
+			Transition carriage = Transition::createTransitionToMatchAny(CRETURN, &matchAny);
+			Transition J{ 'j', CRETURN, &carriage };
+			Transition B{ 'b', 'j', &J };
+			Transition O{ 'o', 'b', &B };
+			Transition start{ START, 'o', &O };
+			bytesParsed = parse<ObjToken>(span, &start);
+			if (bytesParsed != -1)
+			{
+				storedBytes = span.first(bytesParsed);
+			}
 		}
-		[[nodiscard]] byte_t getCurrentState() const
-		{
-			return m_states[m_currentStateIdx];
-		}
-		[[nodiscard]] size_t nParsedCharacters() const
-		{
-			return m_storedChars.size();
-		}
-	private:
-		uint8_t m_currentStateIdx{ 0 };
-		std::vector<byte_t> m_storedChars{};
-		static constexpr byte_t m_states[] = {'o', 'b', 'j', CRETURN, MATCHANY, 'n', 'd', 'o', 'b', 'j', CRETURN};
 	};
 
 	struct DictToken
 	{
-		explicit DictToken(std::span<byte_t> span)
+		static constexpr byte_t firstCharacter{LESSTHAN};
+		std::span<const byte_t> storedBytes;
+		int nLessThan{ 0 };
+		int nGreaterThan{ 0 };
+		int bytesParsed{ 0 };
+
+		explicit DictToken(std::span<const byte_t> span)
 		{
-			storedChars.reserve(256);
-			for (byte_t byte : span)
-			{
-				if (match(byte))
+			Transition secondGreaterThan = Transition::createDoneTransition(GREATERTHAN, GREATERTHAN);
+			Transition matchAny{ MATCHANY, GREATERTHAN, [this, &matchAny, &secondGreaterThan](state_t incoming) {
+				if (incoming == LESSTHAN)
 				{
-					return;
+					this->nLessThan++;
 				}
-			}
-		}
-		static constexpr byte_t firstCharacter{ LESSTHAN };
-		bool match(byte_t byte)
-		{
-			storedChars.push_back(byte);
-			if (byte == LESSTHAN)
+				else if (incoming == GREATERTHAN)
+				{
+					if (this->nLessThan - 2 == this->nGreaterThan++)
+					{
+						return Transition::ResultType{CONTINUE, &secondGreaterThan};
+					}
+				}
+				return Transition::ResultType{CONTINUE, &matchAny};
+			} };
+			Transition secondLessThan = Transition::createTransitionToMatchAny(LESSTHAN, &matchAny);
+			Transition start{ START, LESSTHAN, &secondLessThan };
+			bytesParsed = parse<DictToken>(span, &start);
+			if (bytesParsed != -1)
 			{
-				++nLessThan;
+				storedBytes = span.first(bytesParsed);
 			}
-			else if (byte == GREATERTHAN)
-			{
-				++nGreaterThan;
-			}
-			return nLessThan == nGreaterThan && (nLessThan > 0 && nGreaterThan > 0);
 		}	
-		uint32_t nLessThan{ 0 };
-		uint32_t nGreaterThan{ 0 };
-		std::vector<byte_t> storedChars{};
 	};
 
 } // storyt::_internal

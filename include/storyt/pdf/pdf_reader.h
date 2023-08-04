@@ -25,18 +25,18 @@ namespace storyt::_internal
 				byte_t byte = m_pdf[i];
 				switch (m_pdf[i])
 				{
-				//case ObjToken::firstCharacter:
-				//	{
-				//		ObjToken obj(m_pdf.subspan(i));
-				//		i += obj.nParsedCharacters();
-				//		break;
-				//	}
+				case ObjToken::firstCharacter:
+					{
+						ObjToken obj(m_pdf.subspan(i));
+						i += obj.bytesParsed;
+						break;
+					}
 				case DictToken::firstCharacter:
-				{
-					DictToken dict(m_pdf.subspan(i));
-					i += dict.idx;
-					break;
-				}
+					{
+						DictToken dict(m_pdf.subspan(i));
+						i += dict.bytesParsed;
+						break;
+					}
 				}
 			}
 		}
