@@ -9,7 +9,8 @@
 #include <span>
 
 #include <storyt/common.h>
-#include <storyt/pdf/tokens.h>
+#include <storyt/pdf/parsers.h>
+
 
 namespace storyt::_internal
 {
@@ -18,26 +19,12 @@ namespace storyt::_internal
 	public:
 		explicit PDFTextReader(std::vector<byte_t>& bytes)
 			: m_pdf(std::span(bytes)) 
-		{
-			
+		{	
+			std::vector<PDFObject> objects;
 			for (size_t i = 0; i < m_pdf.size(); ++i)
 			{
-				byte_t byte = m_pdf[i];
-				switch (m_pdf[i])
-				{
-				case ObjToken::firstCharacter:
-					{
-						ObjToken obj(m_pdf.subspan(i));
-						i += obj.bytesParsed;
-						break;
-					}
-				case DictToken::firstCharacter:
-					{
-						DictToken dict(m_pdf.subspan(i));
-						i += dict.bytesParsed;
-						break;
-					}
-				}
+				PDFObject obj(m_pdf.subspan(i));
+				i += obj.totalBytesParsed;
 			}
 		}
 		
