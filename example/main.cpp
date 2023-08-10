@@ -2,6 +2,7 @@
 #include <array>
 #include <string>
 #include <iostream>
+#include <span>
 
 
 #include <storyt/pst/pst_reader.h>
@@ -17,6 +18,10 @@ int main()
     File pdf("C:\\Users\\caleb\\Coding_Projects\\CPP Projects\\PST File Reader\\data\\Test.pdf");
     pdf.open();
 
+    std::vector<byte_t> str = {'C', 'o', 'm', 'p', 'r', 'e', 's', 's'};
+    std::span<byte_t> toCompress(str);
+    std::string compressed = compress(toCompress);
+
     std::vector<byte_t> buffer = pdf.read(pdf.getFileSize());
     PDFTextReader pdfReader(buffer);
 
@@ -31,17 +36,17 @@ int main()
     //std::cout << com << "\n";
 
     //std::array<Bytef, 32> data = storyt::_internal::inflate(compressed);
-    std::string data("Compressed");
-    std::string str = compressString(data);
-    std::cout << str << "\n";
+    //std::string data("Compressed");
+    //std::string str = compressString(data);
+    //std::cout << str << "\n";
 
-    std::vector<std::byte> vec{};
+    //std::vector<std::byte> vec{};
     //PDFTextReader reader(makeStream(vec));
 
     //std::array<Bytef, 19> data = { 0x78, 0x01, 0x63, 0x62, 0x80, 0x00, 0x66, 0x20, 0xc5, 0x08, 0xc4, 0x20, 0x1a, 0x04, 0x00, 0x00, 0x9c, 0x00, 0x0a };
     //std::string str(data.begin(), data.end());
-    std::string ret = decompressString(str);
-    std::cout << ret << "\n";
+    //std::string ret = decompressString(str);
+    //std::cout << ret << "\n";
 
 
     //std::array<Bytef, 25> tocompress = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 

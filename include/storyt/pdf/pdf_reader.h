@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <vector>
 #include <array>
+#include <string>
 #include <span>
 
 #include <storyt/common.h>
@@ -23,8 +24,14 @@ namespace storyt::_internal
 			std::vector<PDFObject> objects;
 			for (size_t i = 0; i < m_pdf.size(); ++i)
 			{
-				PDFObject obj(m_pdf.subspan(i));
-				i += obj.totalBytesParsed;
+				PDFObject obj = PDFObject::create(m_pdf.subspan(i));
+				i += obj.getTotalBytesParsed();
+
+				if (obj.hasStream())
+				{
+					STORYT_INFO("Dictionary [ {} ]\nDecompressed [ {} ]\n\n", 
+						obj.dictToString(), obj.decompressStream());
+				}
 			}
 		}
 		
