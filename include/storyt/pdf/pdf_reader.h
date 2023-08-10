@@ -30,7 +30,7 @@ namespace storyt::_internal
 				if (obj.hasStream())
 				{
 					STORYT_INFO("Dictionary [ {} ]\nDecompressed [ {} ]\n\n", 
-						obj.dictToString(), obj.decompressStream());
+						obj.dictToString(), obj.decompressedStreamToString());
 				}
 			}
 		}

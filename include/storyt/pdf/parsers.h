@@ -85,6 +85,21 @@ namespace storyt::_internal
 		}
 		return { static_cast<int>(span.size()), {} };
 	}
+	std::string bytesToString(std::span<byte_t> bytes)
+	{
+		return std::string(bytes.begin(), bytes.end());
+	}
+	int bytesToInt(std::span<byte_t> bytes)
+	{
+		std::string i = bytesToString(bytes);
+		// search for anything that is not a number
+		if (std::regex_search(i, std::regex("[^0-9]")))
+		{
+			STORYT_ERROR("Failed to convert string [{}] to integer", i);
+			return NOTFOUND;
+		}
+		return std::stoi(i);
+	}
 
 	struct Range
 	{
@@ -122,19 +137,11 @@ namespace storyt::_internal
 		}
 		[[nodiscard]] std::string toString(std::span<byte_t> bytes) const
 		{
-			std::span<byte_t> span = toSpan(bytes);
-			return std::string(span.begin(), span.end());
+			return bytesToString(toSpan(bytes));
 		}
 		[[nodiscard]] int toInt(std::span<byte_t> bytes) const
 		{
-			std::string i = toString(bytes);
-			// search for anything that is not a number
-			if (std::regex_search(i, std::regex("[^0-9]")))
-			{
-				STORYT_ERROR("Failed to convert string [{}] to integer", i);
-				return NOTFOUND;
-			}
-			return std::stoi(toString(bytes));
+			return bytesToInt(toSpan(bytes));
 		}
 	};
 
@@ -249,6 +256,47 @@ namespace storyt::_internal
 			}
 		}
 		return NOTFOUND;
+	}
+
+	int readUntilNot(
+		std::span<byte_t> bytes, int startIdx, std::unordered_set<byte_t> possibleNotBytes
+	)
+	{
+		for (int i = startIdx; i < bytes.size(); ++i)
+		{
+			if (!possibleNotBytes.contains(bytes[i]))
+			{
+				return i;
+			}
+		}
+		return NOTFOUND;
+	}
+
+	std::vector<Range> readValuesDelimitedByUntil(
+		std::span<byte_t> bytes, int startIdx, byte_t delim, std::unordered_set<byte_t> possibleEndBytes
+	)
+	{
+		// remove white space and any delims up until the first value byte
+		const int newStartIdx = readUntilNot(bytes, startIdx, { ' ', delim });	
+		if (newStartIdx == NOTFOUND)
+		{
+			return {};
+		}
+		std::vector<Range> values{};
+		int nextValidValueByte = newStartIdx;
+		while (nextValidValueByte < bytes.size())
+		{
+			const byte_t byte = bytes[nextValidValueByte];
+			const int valueStartIdx = nextValidValueByte;
+			const int delimIdx = find(bytes, delim, valueStartIdx + 1);
+			if (possibleEndBytes.contains(byte) || delimIdx == NOTFOUND || byte == delim)
+			{
+				return values;
+			}
+			values.push_back({ valueStartIdx, delimIdx - 1 });
+			nextValidValueByte += delimIdx + 1;
+		}
+		return values;
 	}
 
 	class IndirectReference
@@ -492,6 +540,10 @@ namespace storyt::_internal
 				std::span<byte_t> bytes = getDictValue(name);
 				return std::string(bytes.begin(), bytes.end());
 			}
+			else if constexpr(std::is_integral_v<ValueAs>)
+			{
+				return bytesToInt(getDictValue(name));
+			}
 			else
 			{
 				STORYT_ASSERT(false, "Passed invalid type");
@@ -505,9 +557,17 @@ namespace storyt::_internal
 			}
 			return std::string{};
 		}
-		[[nodiscard]] std::string decompressStream() const
+		[[nodiscard]] std::string decompressedStreamToString()
 		{
-			return decompress(m_stream);
+			decompressStream();
+			return std::string(m_decompressedStream.begin(), m_decompressedStream.end());
+		}
+		void decompressStream()
+		{
+			if (m_decompressedStream.empty())
+			{
+				m_decompressedStream = decompress(m_stream);
+			}
 		}
 	private:
 		explicit PDFObject(
@@ -528,7 +588,18 @@ namespace storyt::_internal
 		{
 			if (getDictValueAs<std::string>("/Type") == "ObjStm")
 			{
-				bool t = true;
+				decompressStream();
+				STORYT_ASSERT((!m_decompressedStream.empty()), "Failed to decompress stream");
+				std::span<byte_t> decompressedBytes(m_decompressedStream);
+				const int first = getDictValueAs<int>("/First");
+				const int length = getDictValueAs<int>("/Length");
+				const int N = getDictValueAs<int>("/N");
+				STORYT_ASSERT((decompressedBytes[0] != ' '), "Invalid decompressed stream");
+				const byte_t delim = ' ';
+				//TODO: this doesn't work
+				std::vector<Range> values = readValuesDelimitedByUntil(
+					decompressedBytes, 0, delim, { LESSTHAN }
+				);
 			}
 		}
 	private:
@@ -536,6 +607,7 @@ namespace storyt::_internal
 		int m_gen{ NOTFOUND };
 		std::span<byte_t> m_object{};
 		std::span<byte_t> m_stream{};
+		std::vector<byte_t> m_decompressedStream;
 		std::optional<PDFDictionary> m_dict;
 		size_t m_totalBytesParsed{ 0 };
 	};

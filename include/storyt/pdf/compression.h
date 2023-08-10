@@ -13,7 +13,7 @@
 
 namespace storyt::_internal
 {
-	std::string decompress(std::span<byte_t> inbuff)
+	std::vector<byte_t> decompress(std::span<byte_t> inbuff)
 	{
 		z_stream zs;
 		memset(&zs, 0, sizeof(zs));
@@ -22,20 +22,19 @@ namespace storyt::_internal
 		zs.next_in = reinterpret_cast<Bytef*>(inbuff.data());
 		zs.avail_in = inbuff.size();
 
-		char outbuffer[32768];
-		std::string outstring;
+		const size_t outbufferSize = 32768;
+		byte_t outbuffer[outbufferSize];
+		std::vector<byte_t> out;
+		out.reserve(1024 * 5);
 		while(ret == Z_OK)
 		{
 			zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
 			zs.avail_out = sizeof(outbuffer);
 			ret = inflate(&zs, 0);
-			if (outstring.size() < zs.total_out)
-			{
-				outstring.append(outbuffer, zs.total_out - outstring.size());
-			}
 		}
+		std::copy(std::begin(outbuffer), std::next(outbuffer, zs.total_out), std::back_inserter(out));
 		inflateEnd(&zs);
-		return outstring;
+		return out;
 	}
 
 	std::string compress(std::span<byte_t> inbuff, int compressionlevel = Z_BEST_COMPRESSION)
