@@ -145,6 +145,40 @@ namespace storyt::_internal
 		}
 	};
 
+	std::span<byte_t> rangeToSpan(const Range& range, std::span<byte_t> bytes)
+	{
+		if (range.isValid())
+		{
+			return bytes.subspan(range.startIdx, range.size());
+		}
+		STORYT_ASSERT(false, "Range was not valid");
+		return {};
+	}
+
+	template<typename ReturnValueType = std::span<byte_t>>
+	std::vector<ReturnValueType> rangesTo(const std::vector<Range>& ranges, std::span<byte_t> bytes)
+	{
+		std::vector<ReturnValueType> results{};
+		results.reserve(ranges.size());
+		for (const auto& range : ranges)
+		{
+			if constexpr (std::is_same_v<ReturnValueType, int>)
+			{
+				results.push_back(range.toInt(bytes));
+			}
+			else if constexpr (std::is_same_v<ReturnValueType, std::string>)
+			{
+				results.push_back(range.toString(bytes));
+			}
+			else
+			{
+				results.push_back(range.toSpan(bytes));
+			}
+		}
+		STORYT_ASSERT((results.size() == ranges.size()), "Failed to convert ranges to values");
+		return results;
+	}
+
 	Range findKeywordBlock(std::span<byte_t> span, const std::string& startKw, const std::string& endKw, bool removeKeyWords = true)
 	{
 		auto match = [&span](const int idx, const std::string& kw)
@@ -272,8 +306,26 @@ namespace storyt::_internal
 		return NOTFOUND;
 	}
 
+	Range strip(std::span<byte_t> bytes, std::unordered_set<byte_t> charsToStrip)
+	{
+		int left{ 0 };
+		while (charsToStrip.contains(bytes[left]))
+		{
+			++left;
+		}
+		int right{ static_cast<int>(bytes.size()) - 1 };
+		while (charsToStrip.contains(bytes[right]))
+		{
+			--right;
+		}
+		return Range{ left, right };
+	}
+
 	std::vector<Range> readValuesDelimitedByUntil(
-		std::span<byte_t> bytes, int startIdx, byte_t delim, std::unordered_set<byte_t> possibleEndBytes
+		std::span<byte_t> bytes, 
+		int startIdx, 
+		byte_t delim, 
+		const std::unordered_set<byte_t>& possibleEndBytes
 	)
 	{
 		// remove white space and any delims up until the first value byte
@@ -294,39 +346,70 @@ namespace storyt::_internal
 				return values;
 			}
 			values.push_back({ valueStartIdx, delimIdx - 1 });
-			nextValidValueByte += delimIdx + 1;
+			nextValidValueByte = delimIdx + 1;
 		}
 		return values;
 	}
 
+	class BaseObject
+	{
+	public:
+		int totalBytesRead{0};
+	};
+
 	class IndirectReference
 	{
 	public:
-		std::optional<IndirectReference> static create(std::span<byte_t> bytes)
+		static std::vector<IndirectReference> create(std::span<byte_t> bytes, int count)
+		{
+			STORYT_ASSERT((bytes.size() > 0 && bytes[0] == LEFTSQUBRACKET && bytes[bytes.size() - 1] == RIGHTSQUBRACKET), 
+				"Invalid bytes");
+			const Range cleaned = strip(bytes, { ' ', LEFTSQUBRACKET, RIGHTSQUBRACKET });
+			std::span<byte_t> newBytes(bytes.subspan(cleaned.startIdx, cleaned.size()));
+			const byte_t delim = 'R';
+			const std::unordered_set<byte_t> endBytes = { RIGHTSQUBRACKET };
+			std::vector<Range> ranges = readValuesDelimitedByUntil(newBytes, 0, delim, endBytes);
+			STORYT_ASSERT((count == ranges.size()), "Failed to find enough values");
+			std::vector<IndirectReference> refs{};
+			refs.reserve(count);
+			for (const auto& range : ranges)
+			{
+				refs.push_back(create(range.toSpan(newBytes)));
+			}
+			return refs;
+		}
+		static IndirectReference create(std::span<byte_t> bytes)
 		{
 			/// Should be in the format: Number Number R -> 23 0 R or 1 0 R
 			STORYT_ASSERT((!bytes.empty() && bytes[bytes.size() - 1] == 'R'), "Invalid bytes were passed to IndirectReference");
 			STORYT_ASSERT((bytes[0] != ' '), "Invalid bytes were passed to IndirectReference");
-			const int endOfFirstNumber = find(bytes, ' ', 0) - 1;
-			const int endOfSecondNumber = find(bytes, ' ', endOfFirstNumber) - 1;
-			if (endOfFirstNumber != NOTFOUND && endOfSecondNumber != NOTFOUND)
-			{
-				/// "23 R"
-				const int rIdx = endOfSecondNumber + 2;
-				STORYT_ASSERT((bytes[rIdx] != 'R'), "Invalid bytes were passed to IndirectReference");
-				std::span<byte_t> idSpan = bytes.subspan(0, endOfFirstNumber + 1);
-				std::string id(idSpan.begin(), idSpan.end());
-
-				std::span<byte_t> genSpan = bytes.subspan(endOfFirstNumber + 2, endOfSecondNumber + 1);
-				std::string gen(genSpan.begin(), genSpan.end());
-				return IndirectReference{ std::stoi(id), std::stoi(gen) };
-			}
-			STORYT_ASSERT(false, "Failed to construct Indirect Reference");
-			return std::nullopt;
+			const byte_t delim = ' ';
+			const std::unordered_set<byte_t> endBytes = {'R'};
+			std::vector<Range> ranges = readValuesDelimitedByUntil(
+				bytes, 0, delim, endBytes
+			);
+			/// Should be something like: 9 0 with R removed
+			STORYT_ASSERT((ranges.size() == 2), "Invalid indirect reference");
+			std::vector<int> ids = rangesTo<int>(ranges, bytes);
+			return IndirectReference{ ids.at(0), ids.at(1) };
 		}
 		int id{ NOTFOUND };
 		int gen{ NOTFOUND };
 	};
+
+	struct PDFStream
+	{
+		static std::span<byte_t> create(std::span<byte_t> bytes)
+		{
+			const Range streamRange = findKeywordBlock(bytes, "stream\r\n", "endstream");
+			if (streamRange.isValid())
+			{
+				return streamRange.toSpan(bytes);
+			}
+			return std::span<byte_t>{};
+		}
+	};
+
 	// Forward Declare for friend status
 	class PDFObject;
 
@@ -431,15 +514,15 @@ namespace storyt::_internal
 		[[nodiscard]] size_t getTotalBytesParsed() const { return m_totalBytesParsed; }
 	private:
 		explicit PDFDictionary(std::span<byte_t> dictBytes, int totalBytesParsed)
-			: m_dictBytes(dictBytes), m_totalBytesParsed(totalBytesParsed)
+			: m_totalBytesParsed(totalBytesParsed)
 		{
-			parseNameValues_();
+			parseNameValues_(dictBytes);
 		}
-		void parseNameValues_()
+		void parseNameValues_(std::span<byte_t> bytes)
 		{
-			for (int i = 0; i < m_dictBytes.size(); ++i)
+			for (int i = 0; i < bytes.size(); ++i)
 			{
-				const std::span<byte_t> unparsedBytes = m_dictBytes.subspan(i);
+				const std::span<byte_t> unparsedBytes = bytes.subspan(i);
 				const Range nameRange = findName(unparsedBytes);
 				const Range valueRange = findValue(unparsedBytes, nameRange);
 				if (nameRange.isValid() && valueRange.isValid())
@@ -449,21 +532,30 @@ namespace storyt::_internal
 					std::span<byte_t> value = valueRange.toSpan(unparsedBytes);
 					STORYT_VERIFY((!m_dictionary.contains(name)),
 						"Found duplicate name [{}] in dictionary", name);
-					m_dictionary[name] = value;
-
+					m_dictionary[name] = std::vector<byte_t>(value.begin(), value.end());
 					i += valueRange.endIdx;
 				}
 			}
 		}
 	private:
-		std::unordered_map<std::string, std::span<byte_t>> m_dictionary;
-		std::span<byte_t> m_dictBytes;
+		std::unordered_map<std::string, std::vector<byte_t>> m_dictionary;
 		size_t m_totalBytesParsed{ 0 };
 	};
 
 	class PDFObject
 	{
 	public:
+		static PDFObject create(std::span<byte_t> bytes, int objId, int objGen = 0)
+		{
+			std::optional<PDFDictionary> dict = PDFDictionary::create(bytes);
+			return PDFObject(
+				objId, 
+				objGen, 
+				std::vector<byte_t>(bytes.begin(), bytes.end()), 
+				std::move(dict), 
+				bytes.size()
+			);
+		}
 		static PDFObject create(std::span<byte_t> bytes)
 		{
 			const std::string objStartKw("obj");
@@ -505,18 +597,18 @@ namespace storyt::_internal
 				return PDFObject(
 					id, 
 					gen,
-					objBytes, 
+					std::vector<byte_t>(objBytes.begin(), objBytes.end()),
 					std::move(dict), 
-					stream, 
 					objRange.endIdx + (objEndKw.size() * static_cast<int>(shouldRemoveKws))
 				);
 			}
-			return PDFObject(NOTFOUND, NOTFOUND, {}, std::nullopt, {}, bytes.size());
+			return PDFObject(NOTFOUND, NOTFOUND, std::vector<byte_t>{}, std::nullopt, bytes.size());
 		}
 
 		[[nodiscard]] size_t getTotalBytesParsed() const { return m_totalBytesParsed; }
-		[[nodiscard]] bool hasStream() const { return !m_stream.empty(); }
-		[[nodiscard]] bool dictHasName(const std::string& name) 
+		[[nodiscard]] int getID() const { return m_id; }
+		[[nodiscard]] bool isValid() const { return !m_objectBytes.empty() && m_dict.has_value(); }
+		[[nodiscard]] bool dictHasName(const std::string& name)  const
 		{
 			if (m_dict.has_value())
 			{
@@ -540,22 +632,18 @@ namespace storyt::_internal
 				std::span<byte_t> bytes = getDictValue(name);
 				return std::string(bytes.begin(), bytes.end());
 			}
-			else if constexpr(std::is_integral_v<ValueAs>)
+			else if constexpr(std::is_same_v<ValueAs, int>)
 			{
 				return bytesToInt(getDictValue(name));
+			}
+			else if constexpr (std::is_same_v<ValueAs, IndirectReference>)
+			{
+				return IndirectReference::create(getDictValue(name));
 			}
 			else
 			{
 				STORYT_ASSERT(false, "Passed invalid type");
 			}
-		}
-		[[nodiscard]] std::string dictToString() const
-		{
-			if (m_dict.has_value())
-			{
-				return std::string(m_dict->m_dictBytes.begin(), m_dict->m_dictBytes.end());
-			}
-			return std::string{};
 		}
 		[[nodiscard]] std::string decompressedStreamToString()
 		{
@@ -566,26 +654,12 @@ namespace storyt::_internal
 		{
 			if (m_decompressedStream.empty())
 			{
-				m_decompressedStream = decompress(m_stream);
+				m_decompressedStream = decompress(PDFStream::create(m_objectBytes));
 			}
 		}
-	private:
-		explicit PDFObject(
-			int id,
-			int gen,
-			std::span<byte_t> objectBytes,
-			std::optional<PDFDictionary> dict, 
-			std::span<byte_t> streamBytes,
-			size_t totalBytesParsed
-		)
-			: 
-			m_id(id),
-			m_gen(gen),
-			m_object(objectBytes), 
-			m_stream(streamBytes),
-			m_dict(dict),
-			m_totalBytesParsed(totalBytesParsed)
+		std::vector<PDFObject> getSubObjects()
 		{
+			std::vector<PDFObject> subObjects{};
 			if (getDictValueAs<std::string>("/Type") == "ObjStm")
 			{
 				decompressStream();
@@ -596,18 +670,53 @@ namespace storyt::_internal
 				const int N = getDictValueAs<int>("/N");
 				STORYT_ASSERT((decompressedBytes[0] != ' '), "Invalid decompressed stream");
 				const byte_t delim = ' ';
-				//TODO: this doesn't work
 				std::vector<Range> values = readValuesDelimitedByUntil(
 					decompressedBytes, 0, delim, { LESSTHAN }
 				);
+				STORYT_ASSERT((N * 2 == values.size()), "Incorrect number of obj ids and offsets");
+				std::vector<int> idsAndOffsets = rangesTo<int>(values, decompressedBytes);
+				std::span<byte_t> subObjectBytes = decompressedBytes.subspan(values.at(values.size() - 1).endIdx + 2);				
+				for (int i = 0; i < idsAndOffsets.size(); i += 2)
+				{
+					const int id = idsAndOffsets.at(i);
+					const int offset = idsAndOffsets.at(i + 1);
+					int nextId = 0;
+					int nextOffset = subObjectBytes.size();
+					if (i != idsAndOffsets.size() - 2)
+					{
+						nextId = idsAndOffsets.at(i + 2);
+						nextOffset = idsAndOffsets.at(i + 3);
+					}
+					STORYT_ASSERT((offset < nextOffset), "Invalid offsets");
+					subObjects.push_back(PDFObject::create(
+						subObjectBytes.subspan(offset, nextOffset - offset),
+						id
+					));
+				}
 			}
+			return subObjects;
 		}
+		
+	private:
+		explicit PDFObject(
+			int id,
+			int gen,
+			const std::vector<byte_t>& objectBytes,
+			std::optional<PDFDictionary> dict, 
+			size_t totalBytesParsed
+		)
+			: 
+			m_id(id),
+			m_gen(gen),
+			m_objectBytes(objectBytes),
+			m_dict(dict),
+			m_totalBytesParsed(totalBytesParsed)
+		{}
 	private:
 		int m_id{ NOTFOUND };
 		int m_gen{ NOTFOUND };
-		std::span<byte_t> m_object{};
-		std::span<byte_t> m_stream{};
-		std::vector<byte_t> m_decompressedStream;
+		std::vector<byte_t> m_objectBytes{};
+		std::vector<byte_t> m_decompressedStream{};
 		std::optional<PDFDictionary> m_dict;
 		size_t m_totalBytesParsed{ 0 };
 	};

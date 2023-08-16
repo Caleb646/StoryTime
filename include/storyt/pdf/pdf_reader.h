@@ -8,6 +8,7 @@
 #include <array>
 #include <string>
 #include <span>
+#include <unordered_map>
 
 #include <storyt/common.h>
 #include <storyt/pdf/parsers.h>
@@ -21,21 +22,69 @@ namespace storyt::_internal
 		explicit PDFTextReader(std::vector<byte_t>& bytes)
 			: m_pdf(std::span(bytes)) 
 		{	
-			std::vector<PDFObject> objects;
+			int trailerObjectID{ NOTFOUND };
 			for (size_t i = 0; i < m_pdf.size(); ++i)
 			{
 				PDFObject obj = PDFObject::create(m_pdf.subspan(i));
 				i += obj.getTotalBytesParsed();
+				addObject(obj);
 
-				if (obj.hasStream())
+				for (const auto& subObj : obj.getSubObjects())
 				{
-					STORYT_INFO("Dictionary [ {} ]\nDecompressed [ {} ]\n\n", 
-						obj.dictToString(), obj.decompressedStreamToString());
+					addObject(subObj);
+				}
+				// store the latest valid PDF Object id
+				if (obj.isValid())
+				{
+					trailerObjectID = obj.getID();
 				}
 			}
+			// The final pdf object should be the pdf trailer
+			if (trailerObjectID != NOTFOUND)
+			{
+				m_trailer = getObject(trailerObjectID);
+				STORYT_ASSERT(m_trailer->dictHasName("/Root"), "Invalid PDF");
+			}
+			const IndirectReference rootRef = m_trailer->getDictValueAs<IndirectReference>("/Root");
+			m_root = getObject(rootRef.id);
+
+			const IndirectReference pageRef = m_root->getDictValueAs<IndirectReference>("/Pages");
+			m_pages = getObject(pageRef.id);
+			std::vector<IndirectReference> references = IndirectReference::create(m_pages->getDictValue("/Kids"), getPageCount());
+		}
+
+		int getPageCount()
+		{
+			if (m_pages != nullptr)
+			{
+				return m_pages->getDictValueAs<int>("/Count");
+			}
+			return 0;
+		}
+
+		void addObject(const PDFObject& obj)
+		{
+			STORYT_ASSERT(!m_objects.contains(obj.getID()), "Duplicate PDF Object found");
+			m_objects.emplace(
+				std::piecewise_construct,
+				std::forward_as_tuple(obj.getID()),
+				std::forward_as_tuple(obj)
+			);
+		}
+		PDFObject* getObject(int objId)
+		{
+			if (m_objects.contains(objId))
+			{
+				return &m_objects.at(objId);
+			}
+			return nullptr;
 		}
 		
 	private:
+		PDFObject* m_trailer{ nullptr };
+		PDFObject* m_root{ nullptr };
+		PDFObject* m_pages{ nullptr };
+		std::unordered_map<int, PDFObject> m_objects;
 		std::span<byte_t> m_pdf;
 	};
 
