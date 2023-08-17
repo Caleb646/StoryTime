@@ -27,15 +27,14 @@ namespace storyt::_internal
 			{
 				PDFObject obj = PDFObject::create(m_pdf.subspan(i));
 				i += obj.getTotalBytesParsed();
-				addObject(obj);
-
-				for (const auto& subObj : obj.getSubObjects())
-				{
-					addObject(subObj);
-				}
-				// store the latest valid PDF Object id
 				if (obj.isValid())
 				{
+					addObject(obj);
+					for (const auto& subObj : obj.getSubObjects())
+					{
+						addObject(subObj);
+					}
+					// store the latest valid PDF Object id
 					trailerObjectID = obj.getID();
 				}
 			}
@@ -50,7 +49,16 @@ namespace storyt::_internal
 
 			const IndirectReference pageRef = m_root->getDictValueAs<IndirectReference>("/Pages");
 			m_pages = getObject(pageRef.id);
-			std::vector<IndirectReference> references = IndirectReference::create(m_pages->getDictValue("/Kids"), getPageCount());
+			std::vector<IndirectReference> pageRefs = IndirectReference::create(m_pages->getDictValue("/Kids"), getPageCount());
+
+			PDFObject* firstPage = getObject(pageRefs.at(0));
+			const IndirectReference contentRef = firstPage->getDictValueAs<IndirectReference>("/Contents");
+			PDFObject* contents = getObject(contentRef);
+			const IndirectReference c0_0 = firstPage->getDictValueAs<IndirectReference>("/C0_0");
+			PDFObject* font = getObject(c0_0);
+			const IndirectReference cmapRef = font->getDictValueAs<IndirectReference>("/ToUnicode");
+			PDFObject* cmap = getObject(cmapRef);
+			Cmap map = Cmap::create(cmap->decompressStream());
 		}
 
 		int getPageCount()
@@ -64,12 +72,19 @@ namespace storyt::_internal
 
 		void addObject(const PDFObject& obj)
 		{
-			STORYT_ASSERT(!m_objects.contains(obj.getID()), "Duplicate PDF Object found");
-			m_objects.emplace(
-				std::piecewise_construct,
-				std::forward_as_tuple(obj.getID()),
-				std::forward_as_tuple(obj)
-			);
+			if (obj.isValid())
+			{
+				STORYT_ASSERT(!m_objects.contains(obj.getID()), "Duplicate PDF Object found");
+				m_objects.emplace(
+					std::piecewise_construct,
+					std::forward_as_tuple(obj.getID()),
+					std::forward_as_tuple(obj)
+				);
+			}
+		}
+		PDFObject* getObject(IndirectReference ref)
+		{
+			return getObject(ref.id);
 		}
 		PDFObject* getObject(int objId)
 		{

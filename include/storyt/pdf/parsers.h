@@ -100,16 +100,20 @@ namespace storyt::_internal
 		}
 		return std::stoi(i);
 	}
+	int hexCharsToHex(std::span<byte_t> bytes)
+	{
+		return std::stoul(std::string(bytes.begin(), bytes.end()), nullptr, 16);
+	}
 
 	struct Range
 	{
 		int startIdx{ NOTFOUND };
 		int endIdx{ NOTFOUND };
-		[[nodiscard]] bool isValid() const 
-		{ 
-			return 
-				startIdx != NOTFOUND && 
-				endIdx != NOTFOUND && 
+		[[nodiscard]] bool isValid() const
+		{
+			return
+				startIdx != NOTFOUND &&
+				endIdx != NOTFOUND &&
 				startIdx >= 0 && endIdx >= 0 &&
 				endIdx >= startIdx;
 		}
@@ -155,8 +159,10 @@ namespace storyt::_internal
 		return {};
 	}
 
-	template<typename ReturnValueType = std::span<byte_t>>
-	std::vector<ReturnValueType> rangesTo(const std::vector<Range>& ranges, std::span<byte_t> bytes)
+	struct HexString;
+
+	template<typename ReturnValueType = std::span<byte_t>, typename Container>
+	std::vector<ReturnValueType> rangesTo(const Container& ranges, std::span<byte_t> bytes)
 	{
 		std::vector<ReturnValueType> results{};
 		results.reserve(ranges.size());
@@ -169,6 +175,10 @@ namespace storyt::_internal
 			else if constexpr (std::is_same_v<ReturnValueType, std::string>)
 			{
 				results.push_back(range.toString(bytes));
+			}
+			else if constexpr (std::is_same_v<ReturnValueType, HexString>)
+			{
+				results.push_back(HexString::create(range.toSpan(bytes)));
 			}
 			else
 			{
@@ -293,7 +303,9 @@ namespace storyt::_internal
 	}
 
 	int readUntilNot(
-		std::span<byte_t> bytes, int startIdx, std::unordered_set<byte_t> possibleNotBytes
+		std::span<byte_t> bytes, 
+		int startIdx, 
+		const std::unordered_set<byte_t>& possibleNotBytes
 	)
 	{
 		for (int i = startIdx; i < bytes.size(); ++i)
@@ -306,7 +318,10 @@ namespace storyt::_internal
 		return NOTFOUND;
 	}
 
-	Range strip(std::span<byte_t> bytes, std::unordered_set<byte_t> charsToStrip)
+	Range strip(
+		std::span<byte_t> bytes, 
+		const std::unordered_set<byte_t>& charsToStrip
+	)
 	{
 		int left{ 0 };
 		while (charsToStrip.contains(bytes[left]))
@@ -328,18 +343,16 @@ namespace storyt::_internal
 		const std::unordered_set<byte_t>& possibleEndBytes
 	)
 	{
-		// remove white space and any delims up until the first value byte
-		const int newStartIdx = readUntilNot(bytes, startIdx, { ' ', delim });	
-		if (newStartIdx == NOTFOUND)
-		{
-			return {};
-		}
+		const int newStartIdx = startIdx; //readUntilNot(bytes, startIdx, { ' ', delim });	
 		std::vector<Range> values{};
 		int nextValidValueByte = newStartIdx;
 		while (nextValidValueByte < bytes.size())
 		{
 			const byte_t byte = bytes[nextValidValueByte];
 			const int valueStartIdx = nextValidValueByte;
+			//const int delimIdx = std::min(
+			//	find(bytes, delim, valueStartIdx + 1), static_cast<int>(bytes.size()) - 1
+			//);
 			const int delimIdx = find(bytes, delim, valueStartIdx + 1);
 			if (possibleEndBytes.contains(byte) || delimIdx == NOTFOUND || byte == delim)
 			{
@@ -351,10 +364,58 @@ namespace storyt::_internal
 		return values;
 	}
 
-	class BaseObject
+	std::vector<std::span<byte_t>> split(std::span<byte_t> bytes, byte_t splitBy)
 	{
-	public:
-		int totalBytesRead{0};
+		std::vector<std::span<byte_t>> ranges{};
+		std::span<byte_t> bbs = strip(bytes, { ' ' }).toSpan(bytes);
+		int idx{ 0 };
+		while (idx < bbs.size())
+		{
+			const int delimIdx = find(bbs, splitBy, idx);
+			if (delimIdx == NOTFOUND)
+			{
+				ranges.push_back(Range{ 
+					idx, static_cast<int>(bbs.size()) - 1 
+					}.toSpan(bbs));
+				return ranges;
+			}
+			else
+			{
+				ranges.push_back(Range{
+					idx, delimIdx - 1
+					}.toSpan(bbs));
+				idx = delimIdx + 1;
+			}
+		}
+		return ranges;
+	}
+
+	struct HexString
+	{
+		static HexString create(std::span<byte_t> bytes)
+		{
+			const int delimSize = 1;
+			const int startIdx = 0;
+			const Range hrange = find(bytes, '<', '>', startIdx, delimSize);
+			if (hrange.isValid())
+			{
+				std::span<byte_t> newBytes = hrange.toSpan(bytes);
+				STORYT_ASSERT((newBytes.size() >= 4 && newBytes.size() % 4 == 0), "Invalid size for HexString");
+				std::vector<uint16_t> values{};
+				values.reserve(newBytes.size() / 4);
+				for (size_t i = 0; i < newBytes.size(); i += 4)
+				{
+					values.push_back(hexCharsToHex(newBytes.subspan(i, 4)));
+				}
+				return HexString{ values };
+			}
+			return HexString{};
+		}
+		[[nodiscard]] size_t size() const { return values.size(); }
+		[[nodiscard]] uint16_t at(size_t idx) { return values.at(idx); }
+		auto begin() { return values.begin(); }
+		auto end() { return values.end(); }
+		std::vector<uint16_t> values{};
 	};
 
 	class IndirectReference
@@ -381,7 +442,8 @@ namespace storyt::_internal
 		static IndirectReference create(std::span<byte_t> bytes)
 		{
 			/// Should be in the format: Number Number R -> 23 0 R or 1 0 R
-			STORYT_ASSERT((!bytes.empty() && bytes[bytes.size() - 1] == 'R'), "Invalid bytes were passed to IndirectReference");
+			//STORYT_ASSERT((!bytes.empty() && bytes[bytes.size() - 1] == 'R'), "Invalid bytes were passed to IndirectReference");
+			STORYT_ASSERT(!bytes.empty(), "Invalid bytes were passed to IndirectReference");
 			STORYT_ASSERT((bytes[0] != ' '), "Invalid bytes were passed to IndirectReference");
 			const byte_t delim = ' ';
 			const std::unordered_set<byte_t> endBytes = {'R'};
@@ -417,15 +479,17 @@ namespace storyt::_internal
 	{
 		friend PDFObject;
 	public:
-		static std::optional<PDFDictionary> create(std::span<byte_t> bytes)
+		static PDFDictionary create(std::span<byte_t> bytes)
 		{
+			// delimSize = 2 because << and >> for dictionary
 			const int delimSize = 2;
-			const Range dictRange = find(bytes, '<', '>', 0, delimSize);
+			const int startIdx = 0;
+			const Range dictRange = find(bytes, '<', '>', startIdx, delimSize);
 			if (dictRange.isValid())
 			{
 				return PDFDictionary(dictRange.toSpan(bytes), dictRange.endIdx);
 			}
-			return std::nullopt;
+			return PDFDictionary(std::span<byte_t>{}, bytes.size());
 		}
 		static Range findName(std::span<byte_t> bytes)
 		{
@@ -512,11 +576,91 @@ namespace storyt::_internal
 			return { NOTFOUND, NOTFOUND };
 		}
 		[[nodiscard]] size_t getTotalBytesParsed() const { return m_totalBytesParsed; }
+		[[nodiscard]] bool isValid() const { return !m_dictionary.empty(); }
+		[[nodiscard]] bool hasName(const std::string& name)
+		{
+			if (isValid())
+			{
+				return search_(name) != nullptr;
+			}
+			return false;
+		}
+		[[nodiscard]] std::span<byte_t> getValue(const std::string& name)
+		{
+			std::vector<byte_t>* value = search_(name);
+			if (value != nullptr)
+			{
+				return std::span<byte_t>{*value};
+			}
+			return std::span<byte_t>{};
+		}
+		template<typename ValueAs>
+		[[nodiscard]] ValueAs getValueAs(const std::string& name)
+		{
+			if constexpr (std::is_same_v<ValueAs, std::string>)
+			{
+				std::span<byte_t> bytes = getValue(name);
+				return std::string(bytes.begin(), bytes.end());
+			}
+			else if constexpr (std::is_same_v<ValueAs, int>)
+			{
+				return bytesToInt(getValue(name));
+			}
+			else if constexpr (std::is_same_v<ValueAs, IndirectReference>)
+			{
+				return IndirectReference::create(getValue(name));
+			}
+			else if constexpr (std::is_same_v<ValueAs, PDFDictionary>)
+			{
+				return PDFDictionary::create(getValue(name));
+			}
+			else
+			{
+				STORYT_ASSERT(false, "Passed invalid type");
+			}
+		}
 	private:
 		explicit PDFDictionary(std::span<byte_t> dictBytes, int totalBytesParsed)
 			: m_totalBytesParsed(totalBytesParsed)
 		{
 			parseNameValues_(dictBytes);
+		}
+		void createSubDictionaries_()
+		{
+			if (isValid() && !m_createdSubDictionaries)
+			{
+				for (auto& [name, bytes] : m_dictionary)
+				{
+					PDFDictionary dict = PDFDictionary::create(std::span<byte_t>{bytes});
+					if (dict.isValid())
+					{
+						dict.createSubDictionaries_();
+						m_subDictionaries.push_back(std::move(dict));
+					}
+				}
+			}
+			m_createdSubDictionaries = true;
+		}
+		std::vector<byte_t>* search_(const std::string& name)
+		{
+			if (isValid())
+			{
+				if (m_dictionary.contains(name))
+				{
+					return &m_dictionary.at(name);
+				}
+				// if not in the main dictionary create the subdictionaries and search them
+				createSubDictionaries_();
+				for (PDFDictionary& dict : m_subDictionaries)
+				{
+					std::vector<byte_t>* res = dict.search_(name);
+					if (res != nullptr)
+					{
+						return res;
+					}
+				}
+			}
+			return nullptr;
 		}
 		void parseNameValues_(std::span<byte_t> bytes)
 		{
@@ -539,6 +683,8 @@ namespace storyt::_internal
 		}
 	private:
 		std::unordered_map<std::string, std::vector<byte_t>> m_dictionary;
+		std::vector<PDFDictionary> m_subDictionaries{};
+		bool m_createdSubDictionaries{ false };
 		size_t m_totalBytesParsed{ 0 };
 	};
 
@@ -547,12 +693,11 @@ namespace storyt::_internal
 	public:
 		static PDFObject create(std::span<byte_t> bytes, int objId, int objGen = 0)
 		{
-			std::optional<PDFDictionary> dict = PDFDictionary::create(bytes);
 			return PDFObject(
 				objId, 
 				objGen, 
 				std::vector<byte_t>(bytes.begin(), bytes.end()), 
-				std::move(dict), 
+				PDFDictionary::create(bytes),
 				bytes.size()
 			);
 		}
@@ -585,7 +730,7 @@ namespace storyt::_internal
 				static_assert(CRETURN == '\r');
 				static_assert(LFEED == '\n');
 				std::span<byte_t> objBytes = objRange.toSpan(bytes);
-				std::optional<PDFDictionary> dict = PDFDictionary::create(objBytes);
+				PDFDictionary dict = PDFDictionary::create(objBytes);
 				/// TODO: The stream keyword doesn't have to be followed by a \r and a \n. It is possible 
 				/// that it is only followed by a \n .
 				const Range streamRange = findKeywordBlock(objBytes, "stream\r\n", "endstream");
@@ -602,69 +747,52 @@ namespace storyt::_internal
 					objRange.endIdx + (objEndKw.size() * static_cast<int>(shouldRemoveKws))
 				);
 			}
-			return PDFObject(NOTFOUND, NOTFOUND, std::vector<byte_t>{}, std::nullopt, bytes.size());
+			return PDFObject(
+				NOTFOUND, 
+				NOTFOUND, 
+				std::vector<byte_t>{}, 
+				PDFDictionary(std::span<byte_t>{}, bytes.size()), 
+				bytes.size()
+			);
 		}
 
 		[[nodiscard]] size_t getTotalBytesParsed() const { return m_totalBytesParsed; }
 		[[nodiscard]] int getID() const { return m_id; }
-		[[nodiscard]] bool isValid() const { return !m_objectBytes.empty() && m_dict.has_value(); }
-		[[nodiscard]] bool dictHasName(const std::string& name)  const
+		[[nodiscard]] bool isValid() const { return !m_objectBytes.empty() && m_dict.isValid(); }
+		[[nodiscard]] bool hasStream() { return !decompressStream().empty(); }
+		[[nodiscard]] bool dictHasName(const std::string& name)
 		{
-			if (m_dict.has_value())
-			{
-				return m_dict->m_dictionary.contains(name);
-			}
-			return false;
+			return m_dict.hasName(name);
 		}
 		[[nodiscard]] std::span<byte_t> getDictValue(const std::string& name)
 		{
-			if (dictHasName(name))
-			{
-				return m_dict->m_dictionary.at(name);
-			}
-			return {};
+			return m_dict.getValue(name);
 		}
 		template<typename ValueAs>
 		[[nodiscard]] ValueAs getDictValueAs(const std::string& name)
 		{
-			if constexpr(std::is_same_v<ValueAs, std::string>)
-			{
-				std::span<byte_t> bytes = getDictValue(name);
-				return std::string(bytes.begin(), bytes.end());
-			}
-			else if constexpr(std::is_same_v<ValueAs, int>)
-			{
-				return bytesToInt(getDictValue(name));
-			}
-			else if constexpr (std::is_same_v<ValueAs, IndirectReference>)
-			{
-				return IndirectReference::create(getDictValue(name));
-			}
-			else
-			{
-				STORYT_ASSERT(false, "Passed invalid type");
-			}
+			return m_dict.getValueAs<ValueAs>(name);
 		}
 		[[nodiscard]] std::string decompressedStreamToString()
 		{
 			decompressStream();
 			return std::string(m_decompressedStream.begin(), m_decompressedStream.end());
 		}
-		void decompressStream()
+		[[nodiscard]] std::span<byte_t> decompressStream()
 		{
 			if (m_decompressedStream.empty())
 			{
 				m_decompressedStream = decompress(PDFStream::create(m_objectBytes));
 			}
+			return std::span<byte_t>{m_decompressedStream};
 		}
 		std::vector<PDFObject> getSubObjects()
 		{
 			std::vector<PDFObject> subObjects{};
 			if (getDictValueAs<std::string>("/Type") == "ObjStm")
 			{
-				decompressStream();
-				STORYT_ASSERT((!m_decompressedStream.empty()), "Failed to decompress stream");
-				std::span<byte_t> decompressedBytes(m_decompressedStream);
+				std::span<byte_t> decompressedBytes = decompressStream();
+				STORYT_ASSERT((!decompressedBytes.empty()), "Failed to decompress stream");
 				const int first = getDictValueAs<int>("/First");
 				const int length = getDictValueAs<int>("/Length");
 				const int N = getDictValueAs<int>("/N");
@@ -702,14 +830,14 @@ namespace storyt::_internal
 			int id,
 			int gen,
 			const std::vector<byte_t>& objectBytes,
-			std::optional<PDFDictionary> dict, 
+			PDFDictionary&& dict, 
 			size_t totalBytesParsed
 		)
 			: 
 			m_id(id),
 			m_gen(gen),
 			m_objectBytes(objectBytes),
-			m_dict(dict),
+			m_dict(std::move(dict)),
 			m_totalBytesParsed(totalBytesParsed)
 		{}
 	private:
@@ -717,8 +845,223 @@ namespace storyt::_internal
 		int m_gen{ NOTFOUND };
 		std::vector<byte_t> m_objectBytes{};
 		std::vector<byte_t> m_decompressedStream{};
-		std::optional<PDFDictionary> m_dict;
+		PDFDictionary m_dict;
 		size_t m_totalBytesParsed{ 0 };
+	};
+
+	std::vector<Range> readLines(std::span<byte_t> bytes)
+	{
+		int i = 0;
+		std::vector<Range> lines{};
+		const std::unordered_set<byte_t> endbytes = { '\r', '\n' };
+		while (i < bytes.size())
+		{
+			int endIdx = readUntil(bytes, i, endbytes);
+			const Range r{ i, endIdx };
+			if (r.isValid())
+			{
+				lines.push_back(r);
+			}
+			i += std::max(static_cast<int>(r.size()), 1);
+		}
+		return lines;
+	}
+
+	class Cmap
+	{
+	public:
+		static Cmap create(std::span<byte_t> bytes)
+		{
+			std::unordered_map<uint16_t, uint16_t> mapping{};
+			std::span<byte_t> bfBlock = readKwBlock(
+				bytes, "beginbfrange\n", "endbfrange"
+			);
+			std::vector<Range> bflines = readLines(bfBlock);
+			for (const Range& line : bflines)
+			{
+				std::span<byte_t> lineBytes = line.toSpan(bfBlock);
+				std::vector<std::span<byte_t>> lineObjects = readLineObjects(lineBytes);
+				std::vector<HexString> srcCodes = readSrcCodes(lineObjects);
+				std::vector<HexString> dstCodes = readDstCodes(lineObjects);
+				createMapping(mapping, srcCodes, dstCodes);
+			}
+
+			std::span<byte_t> charBlock = readKwBlock(
+				bytes, "beginbfchar\n", "endbfchar"
+			);
+			std::vector<Range> charLines = readLines(charBlock);
+			for (const Range& line : charLines)
+			{
+				std::span<byte_t> lineBytes = line.toSpan(charBlock);
+				std::vector<std::span<byte_t>> lineObjects = readLineObjects(lineBytes);
+				std::vector<HexString> srcCodes = readSrcCodes(lineObjects);
+				std::vector<HexString> dstCodes = readDstCodes(lineObjects);
+				createMapping(mapping, srcCodes, dstCodes);
+			}
+			return Cmap{ std::move(mapping) };
+		}
+		static std::span<byte_t> readKwBlock(
+			std::span<byte_t> bytes, 
+			const std::string& startKw, 
+			const std::string& endKw
+		)
+		{
+			const bool removeKws{ true };
+			const Range crange = findKeywordBlock(
+				bytes, startKw, endKw, removeKws
+			);
+			if (crange.isValid())
+			{
+				return crange.toSpan(bytes);
+			}
+			return std::span<byte_t>{};
+		}
+
+		static void createMapping(
+			std::unordered_map<uint16_t, uint16_t>& map,
+			std::span<HexString> src,
+			std::span<HexString> dst
+			)
+		{
+			// Dst should be a single uint16_t
+			/*
+			* Example: Src -> <0000> <005E>  Dst -> <0020>
+			*	<0000> maps to <0020>
+			*	<005E> maps to <007E> ie <0020> + <005E>
+			*/
+			HexString hex = dst[0];
+			STORYT_ASSERT((hex.size() == 1), "Invalid HexString");
+			uint16_t dstCode = hex.at(0);
+			for (size_t i = 0; i < src.size(); ++i)
+			{
+				STORYT_ASSERT((src[i].size() == 1), "Invalid HexString");
+				uint16_t srcCode = src[i].at(0) + dstCode * (i != 0);
+				STORYT_ASSERT(!map.contains(srcCode), "Invalid HexString");
+				map[srcCode] = dstCode;
+			}
+		}
+
+		static void createCharacterSequenceMapping(
+			std::unordered_map<uint16_t, HexString>& map,
+			std::span<HexString> src,
+			std::span<HexString> dst
+		)
+		{
+			/*
+			* Example: Src -> <005F> <0061>  Dst -> [<00660066> <00660069> <00660066006C>]
+			*	<005F> maps to <00660066> which is the character sequence ff
+			*	<0060> maps to <00660069> which is the character sequence fi
+			*	<0061> maps to <00660066006C> which is the character sequence ffl
+			*/
+
+			//HexString hex = dst[0];
+			//STORYT_ASSERT((hex.size() == 1), "Invalid HexString");
+			//uint16_t dstCode = hex.at(0);
+			//for (size_t i = 0; i < src.size(); ++i)
+			//{
+			//	STORYT_ASSERT((src[i].size() == 1), "Invalid HexString");
+			//	uint16_t srcCode = src[i].at(0) + dstCode * (i != 0);
+			//	map[srcCode] = dstCode;
+			//}
+		}
+
+		static std::vector<std::span<byte_t>> readLineObjects(std::span<byte_t> lineBytes)
+		{
+			return split(lineBytes, ' ');
+		}
+
+		static std::vector<HexString> readSrcCodes(
+			std::span<std::span<byte_t>> lineObjects
+		)
+		{
+			std::vector<HexString> strings{};
+			strings.reserve(lineObjects.size());
+			// Don't include the last line object as it is the dst code.
+			for (std::span<byte_t> srcBytes : lineObjects.subspan(0, lineObjects.size() - 1))
+			{
+				strings.push_back(HexString::create(srcBytes));
+			}
+			return strings;
+		}
+
+		static std::vector<HexString> readDstCodes(
+			std::vector<std::span<byte_t>> lineObjects
+		)
+		{
+			std::span<byte_t> dstBytes = lineObjects.back();
+			if (dstBytes[0] == '[')
+			{
+				std::span<byte_t> strippedBytes = strip(dstBytes, { '[', ']' }).toSpan(dstBytes);
+				std::vector<Range> ranges = readValuesDelimitedByUntil(
+					strippedBytes, 0, ' ', {}
+				);
+				return rangesTo<HexString>(
+					ranges, strippedBytes
+				);
+			}
+			else if (dstBytes[0] == '<')
+			{
+				return std::vector<HexString>{HexString::create(dstBytes)};
+			}
+			else
+			{
+				STORYT_ASSERT(false, "Dst bytes were invalid");
+			}
+			return std::vector<HexString>{};
+		}
+
+		static void readRange(std::span<byte_t> bytes, const std::vector<Range>& lines)
+		{
+			for (const Range& line : lines)
+			{
+				std::span<byte_t> lineBytes = line.toSpan(bytes);
+				std::vector<Range> lineObjs = readValuesDelimitedByUntil(
+					lineBytes,
+					0,
+					' ',
+					{}
+				);
+				// the last object in lineObjs is the dest obj so don't read it
+				std::vector<HexString> srcObjects = rangesTo<HexString>(
+					std::span<Range>{lineObjs}.subspan(0, lineObjs.size() - 1), 
+					lineBytes
+				);
+				std::span<byte_t> dstBytes = strip(lineObjs.back().toSpan(lineBytes), {' '}).toSpan(lineBytes);
+				if (dstBytes[0] == '[')
+				{
+					std::span<byte_t> strippedBytes = strip(dstBytes, {'[', ']'}).toSpan(dstBytes);
+					std::vector<HexString> values = rangesTo<HexString>(readValuesDelimitedByUntil(
+							strippedBytes,
+							0,
+							' ',
+							{}
+						),
+						strippedBytes
+					);
+				}
+				else if (dstBytes[0] == '<')
+				{
+					uint16_t dst = HexString::create(dstBytes).at(0);
+					std::unordered_map<uint16_t, uint16_t> mapping;
+					for (HexString& srcHex : srcObjects)
+					{
+						for (size_t i = 0; i < srcHex.size(); ++i)
+						{
+							mapping[srcHex.at(i)] = srcHex.at(i) + (dst * (i != 0));
+						}
+					}
+				}
+				else
+				{
+					STORYT_ASSERT(false, "Dst bytes were invalid");
+				}
+			}
+		}
+		private:
+			explicit Cmap(std::unordered_map<uint16_t, uint16_t>&& cmap)
+				: m_cmap(std::move(cmap)) {}
+		private:
+			std::unordered_map<uint16_t, uint16_t> m_cmap{};
 	};
 
 } // storyt::_internal
