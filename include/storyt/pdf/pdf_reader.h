@@ -52,13 +52,30 @@ namespace storyt::_internal
 			std::vector<IndirectReference> pageRefs = IndirectReference::create(m_pages->getDictValue("/Kids"), getPageCount());
 
 			PDFObject* firstPage = getObject(pageRefs.at(0));
-			const IndirectReference contentRef = firstPage->getDictValueAs<IndirectReference>("/Contents");
-			PDFObject* contents = getObject(contentRef);
-			const IndirectReference c0_0 = firstPage->getDictValueAs<IndirectReference>("/C0_0");
-			PDFObject* font = getObject(c0_0);
-			const IndirectReference cmapRef = font->getDictValueAs<IndirectReference>("/ToUnicode");
-			PDFObject* cmap = getObject(cmapRef);
-			Cmap map = Cmap::create(cmap->decompressStream());
+			readPageText(firstPage);
+		}
+
+		void readPageText(PDFObject* page)
+		{
+			if (page != nullptr)
+			{
+				PDFObject* pageContent = getObject(
+					page->getDictValueAs<IndirectReference>("/Contents")
+				);
+				PageText text = PageText::create(pageContent->decompressStream());
+				for (auto& block : text)
+				{
+					if (block.fontName.size() > 0)
+					{
+						const IndirectReference c0_0 = page->getDictValueAs<IndirectReference>(block.fontName);
+						PDFObject* font = getObject(c0_0);
+						const IndirectReference cmapRef = font->getDictValueAs<IndirectReference>("/ToUnicode");
+						PDFObject* cmap = getObject(cmapRef);
+						Cmap map = Cmap::create(cmap->decompressStream());
+						std::string decodedText = PageText::decode(block, map);
+					}
+				}
+			}
 		}
 
 		int getPageCount()

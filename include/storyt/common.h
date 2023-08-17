@@ -97,23 +97,6 @@ namespace storyt::_internal
 		std::string m_path;
 		std::ifstream m_file;
 	};
-
-	//template<typename, template<typename> class Alloc, template<typename, typename> class Container>
-	//class Stream
-	//{
-	//public:
-	//	explicit Stream(Container<std::byte, Alloc<std::byte>>&& container)
-	//		: m_container(std::move(container)) {}
-
-	//private:
-	//	Container<std::byte, Alloc<std::byte>> m_container;
-	//};
-
-	//template<typename DataType, template<typename> class Alloc, template<typename, typename> class Container>
-	//static Stream<std::byte, Alloc, Container> makeStream(Container<DataType, Alloc<DataType>>& container)
-	//{
-	//	return Stream<std::byte, Alloc, Container>(std::move(container));
-	//}
 }
 
 #endif // end of STORYT_COMMON_H

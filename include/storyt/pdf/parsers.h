@@ -136,8 +136,7 @@ namespace storyt::_internal
 			{
 				return bytes.subspan(startIdx, size());
 			}
-			STORYT_ASSERT(false, "Range was not valid");
-			return {};
+			return std::span<byte_t>{};
 		}
 		[[nodiscard]] std::string toString(std::span<byte_t> bytes) const
 		{
@@ -323,6 +322,10 @@ namespace storyt::_internal
 		const std::unordered_set<byte_t>& charsToStrip
 	)
 	{
+		if (bytes.empty())
+		{
+			return Range{NOTFOUND, NOTFOUND};
+		}
 		int left{ 0 };
 		while (charsToStrip.contains(bytes[left]))
 		{
@@ -411,6 +414,7 @@ namespace storyt::_internal
 			}
 			return HexString{};
 		}
+		[[nodiscard]] bool empty() const { return size() == 0; }
 		[[nodiscard]] size_t size() const { return values.size(); }
 		[[nodiscard]] uint16_t at(size_t idx) { return values.at(idx); }
 		auto begin() { return values.begin(); }
@@ -849,22 +853,39 @@ namespace storyt::_internal
 		size_t m_totalBytesParsed{ 0 };
 	};
 
-	std::vector<Range> readLines(std::span<byte_t> bytes)
+	std::vector<std::span<byte_t>> breakIntoLines(std::span<byte_t> bytes)
 	{
-		int i = 0;
-		std::vector<Range> lines{};
+		int idx = 0;
+		std::vector<std::span<byte_t>> lines{};
 		const std::unordered_set<byte_t> endbytes = { '\r', '\n' };
-		while (i < bytes.size())
+		while (idx < bytes.size())
 		{
-			int endIdx = readUntil(bytes, i, endbytes);
-			const Range r{ i, endIdx };
+			const int endIdx = readUntil(bytes, idx, endbytes);
+			const Range r{ idx, endIdx };
 			if (r.isValid())
 			{
-				lines.push_back(r);
+				lines.push_back(r.toSpan(bytes));
 			}
-			i += std::max(static_cast<int>(r.size()), 1);
+			idx += std::max(static_cast<int>(r.size()), 1);
 		}
 		return lines;
+	}
+
+	std::span<byte_t> readKeywordBlock(
+		std::span<byte_t> bytes,
+		const std::string& startKw,
+		const std::string& endKw,
+		bool removeKws = true
+	)
+	{
+		const Range crange = findKeywordBlock(
+			bytes, startKw, endKw, removeKws
+		);
+		if (crange.isValid())
+		{
+			return crange.toSpan(bytes);
+		}
+		return std::span<byte_t>{};
 	}
 
 	class Cmap
@@ -873,48 +894,24 @@ namespace storyt::_internal
 		static Cmap create(std::span<byte_t> bytes)
 		{
 			std::unordered_map<uint16_t, uint16_t> mapping{};
-			std::span<byte_t> bfBlock = readKwBlock(
-				bytes, "beginbfrange\n", "endbfrange"
-			);
-			std::vector<Range> bflines = readLines(bfBlock);
-			for (const Range& line : bflines)
+			auto readBlock = [&mapping, bytes](
+					const std::string& startKw, const std::string& endKw
+				)
 			{
-				std::span<byte_t> lineBytes = line.toSpan(bfBlock);
-				std::vector<std::span<byte_t>> lineObjects = readLineObjects(lineBytes);
-				std::vector<HexString> srcCodes = readSrcCodes(lineObjects);
-				std::vector<HexString> dstCodes = readDstCodes(lineObjects);
-				createMapping(mapping, srcCodes, dstCodes);
-			}
-
-			std::span<byte_t> charBlock = readKwBlock(
-				bytes, "beginbfchar\n", "endbfchar"
-			);
-			std::vector<Range> charLines = readLines(charBlock);
-			for (const Range& line : charLines)
-			{
-				std::span<byte_t> lineBytes = line.toSpan(charBlock);
-				std::vector<std::span<byte_t>> lineObjects = readLineObjects(lineBytes);
-				std::vector<HexString> srcCodes = readSrcCodes(lineObjects);
-				std::vector<HexString> dstCodes = readDstCodes(lineObjects);
-				createMapping(mapping, srcCodes, dstCodes);
-			}
+				std::span<byte_t> block = readKeywordBlock(
+					bytes, startKw, endKw
+				);
+				for (std::span<byte_t> line : breakIntoLines(block))
+				{
+					std::vector<std::span<byte_t>> lineObjects = breakLineIntoObjects(line);
+					std::vector<HexString> srcCodes = readSrcCodes(lineObjects);
+					std::vector<HexString> dstCodes = readDstCodes(lineObjects);
+					createMapping(mapping, srcCodes, dstCodes);
+				}
+			};
+			readBlock("beginbfrange\n", "endbfrange");
+			readBlock("beginbfchar\n", "endbfchar");
 			return Cmap{ std::move(mapping) };
-		}
-		static std::span<byte_t> readKwBlock(
-			std::span<byte_t> bytes, 
-			const std::string& startKw, 
-			const std::string& endKw
-		)
-		{
-			const bool removeKws{ true };
-			const Range crange = findKeywordBlock(
-				bytes, startKw, endKw, removeKws
-			);
-			if (crange.isValid())
-			{
-				return crange.toSpan(bytes);
-			}
-			return std::span<byte_t>{};
 		}
 
 		static void createMapping(
@@ -965,7 +962,7 @@ namespace storyt::_internal
 			//}
 		}
 
-		static std::vector<std::span<byte_t>> readLineObjects(std::span<byte_t> lineBytes)
+		static std::vector<std::span<byte_t>> breakLineIntoObjects(std::span<byte_t> lineBytes)
 		{
 			return split(lineBytes, ' ');
 		}
@@ -1009,59 +1006,84 @@ namespace storyt::_internal
 			}
 			return std::vector<HexString>{};
 		}
-
-		static void readRange(std::span<byte_t> bytes, const std::vector<Range>& lines)
+		std::string decode(HexString& string)
 		{
-			for (const Range& line : lines)
+			// TODO: this doesn't handle character larger than a single byte.
+			std::vector<uint8_t> result{};
+			result.reserve(string.size());
+			for (uint16_t hex : string)
 			{
-				std::span<byte_t> lineBytes = line.toSpan(bytes);
-				std::vector<Range> lineObjs = readValuesDelimitedByUntil(
-					lineBytes,
-					0,
-					' ',
-					{}
-				);
-				// the last object in lineObjs is the dest obj so don't read it
-				std::vector<HexString> srcObjects = rangesTo<HexString>(
-					std::span<Range>{lineObjs}.subspan(0, lineObjs.size() - 1), 
-					lineBytes
-				);
-				std::span<byte_t> dstBytes = strip(lineObjs.back().toSpan(lineBytes), {' '}).toSpan(lineBytes);
-				if (dstBytes[0] == '[')
-				{
-					std::span<byte_t> strippedBytes = strip(dstBytes, {'[', ']'}).toSpan(dstBytes);
-					std::vector<HexString> values = rangesTo<HexString>(readValuesDelimitedByUntil(
-							strippedBytes,
-							0,
-							' ',
-							{}
-						),
-						strippedBytes
-					);
-				}
-				else if (dstBytes[0] == '<')
-				{
-					uint16_t dst = HexString::create(dstBytes).at(0);
-					std::unordered_map<uint16_t, uint16_t> mapping;
-					for (HexString& srcHex : srcObjects)
-					{
-						for (size_t i = 0; i < srcHex.size(); ++i)
-						{
-							mapping[srcHex.at(i)] = srcHex.at(i) + (dst * (i != 0));
-						}
-					}
-				}
-				else
-				{
-					STORYT_ASSERT(false, "Dst bytes were invalid");
-				}
+				result.push_back(m_cmap.at(hex));
 			}
+			return std::string(result.begin(), result.end());
 		}
 		private:
 			explicit Cmap(std::unordered_map<uint16_t, uint16_t>&& cmap)
 				: m_cmap(std::move(cmap)) {}
 		private:
 			std::unordered_map<uint16_t, uint16_t> m_cmap{};
+	};
+
+	struct Text
+	{
+		std::string fontName{};
+		HexString text{};
+	};
+
+	class PageText
+	{
+	public:
+		static PageText create(std::span<byte_t> bytes)
+		{
+			int idx{ 0 };
+			std::vector<Text> texts{};
+			while (idx < bytes.size())
+			{	
+				std::span<byte_t> currentBytes = bytes.subspan(idx);
+				std::span<byte_t> block = readKeywordBlock(
+					currentBytes, "BT", "ET"
+				);
+				std::string fontName{};
+				std::vector<std::span<byte_t>> lines = breakIntoLines(block);
+				for (std::span<byte_t> line : lines)
+				{
+					std::span<byte_t> font = readKeywordBlock(
+						line, "/", "Tf", false
+					);
+					std::span<byte_t> fontNameBytes = strip(readKeywordBlock(
+						font, "/", " ", false
+					), { ' ' }).toSpan(font);
+					HexString text = readText(readKeywordBlock(
+						line, "<", ">", false
+					));
+					if (!fontNameBytes.empty())
+					{
+						fontName = bytesToString(fontNameBytes);
+					}
+					if (!text.empty())
+					{
+						texts.push_back({ fontName, std::move(text) });
+					}
+				}
+				idx += std::max(static_cast<int>(block.size()), 1);
+			}
+			return PageText(std::move(texts));
+		}
+		static HexString readText(std::span<byte_t> textBytes)
+		{
+			return HexString::create(textBytes);
+		}
+		static std::string decode(Text& text, Cmap& cmap)
+		{
+			return cmap.decode(text.text);
+		}
+		auto begin() { return m_text.begin(); }
+		auto end() { return m_text.end(); }
+	private:
+		explicit PageText(std::vector<Text>&& text)
+			:  m_text(std::move(text)) {}
+	private:
+		std::vector<Text> m_text{};
 	};
 
 } // storyt::_internal
